@@ -9,5 +9,5 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["*.ts", "*.tsx", "src/App.tsx"]
+  "include": ["*.ts", "*.tsx", "App.tsx", "index.tsx"]
 }
