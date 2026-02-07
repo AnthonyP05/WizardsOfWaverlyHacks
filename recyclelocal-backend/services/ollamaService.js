@@ -103,7 +103,7 @@ async function makeOllamaRequest(endpoint, payload) {
  */
 async function chatWithRecyclingAssistant(userMessage) {
   const payload = {
-    model: 'llama3.2',
+    model: 'qwen2.5:3b',
     messages: [
       {
         role: 'system',
@@ -126,8 +126,35 @@ async function chatWithRecyclingAssistant(userMessage) {
  */
 async function analyzeRecyclingImage(imageBase64) {
   const payload = {
-    model: 'llava',
-    prompt: 'You are a recycling expert assistant. Analyze this image and identify any recyclable items. For each item, determine if it is recyclable, what type of recycling bin it belongs to, and any preparation steps needed (like rinsing or removing labels). Be specific and helpful.',
+    model: 'llava:13b',
+    prompt: `Can you make this into one big string with no enter characters:
+
+Each image analysis is independent. Ignore all previous images and answers.
+
+You are an image recognition assistant for a recycling application.
+
+When given an image:
+- Identify the primary item visible (Include brand name when deciding what item it is)
+- Use a specific name for the item
+- Use a specific name for the materials the item is composed of (only if it's a recyclable material, otherwise, list as non-recyclable
+- Prefer recycling-relevant terms
+
+Analyze the image and respond in JSON only:
+
+{
+"item": "<generic item name>",
+"brand": "<brand name or null>",
+"material": "<material or unknown>",
+"confidence": "high | medium | low"
+}
+
+Rules:
+- Only name a brand if clearly visible
+- Do not guess
+- If unsure, set fields to null or "unknown"
+
+Do not include explanations or additional text.
+If the item cannot be confidently identified, set confidence to low`,
     images: [imageBase64],
     stream: false
   };
