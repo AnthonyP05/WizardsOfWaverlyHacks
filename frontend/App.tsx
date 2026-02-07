@@ -1,23 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Layout from './components/Layout';
+import HomeView from './components/HomeView';
+
+export type AppView = 'home' | 'scanner' | 'about' | 'login' | 'signup';
 
 const App: React.FC = () => {
+  const [currentView, setCurrentView] = useState<AppView>('home');
+  const handleNavigate = (view: AppView | 'chat', e?: React.MouseEvent) => {
+    if (view === 'chat') return;
+    setCurrentView(view as AppView);
+  };
+
   return (
     <Layout>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh'
-      }}>
-        <h1 style={{
-          fontSize: '3rem',
-          fontWeight: 'bold',
-          color: 'white'
-        }}>
-          WizardsOfWaverlyHacks
-        </h1>
-      </div>
+      <HomeView onNavigate={handleNavigate} />
     </Layout>
   );
 };
