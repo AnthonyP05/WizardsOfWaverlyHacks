@@ -2,29 +2,41 @@ import React from 'react';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <div className="relative min-h-screen w-full overflow-hidden magic-gradient text-white">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-600/10 blur-[120px] rounded-full animate-pulse delay-700" />
-        <div className="absolute top-3/4 left-1/3 w-64 h-64 bg-green-500/10 blur-[80px] rounded-full animate-pulse delay-1000" />
+    <div style={{
+      position: 'relative',
+      minHeight: '100vh',
+      width: '100%',
+      overflow: 'hidden',
+      background: 'linear-gradient(135deg, #1d0937 0%, #05020a 100%)',
+      color: 'white'
+    }}>
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         {[...Array(12)].map((_, i) => (
           <div 
             key={i}
-            className="absolute text-green-400/20 text-xl animate-bounce"
             style={{
+              position: 'absolute',
+              fontSize: '1.25rem',
+              color: 'rgba(34, 197, 94, 0.2)',
               top: `${Math.random() * 100}%`,
               left: `${Math.random() * 100}%`,
-              animationDuration: `${3 + Math.random() * 4}s`,
+              animation: `bounce ${3 + Math.random() * 4}s infinite`,
               animationDelay: `${Math.random() * 2}s`
             }}
           >
             {i % 2 === 0 ? '🌿' : '♻️'}
           </div>
         ))}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/10 blur-[120px] rounded-full animate-pulse" />
       </div>
-      <main className="relative z-10">
+      <main style={{ position: 'relative', zIndex: 10 }}>
         {children}
       </main>
+      <style>{`
+        @keyframes bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-20px); }
+        }
+      `}</style>
     </div>
   );
 };

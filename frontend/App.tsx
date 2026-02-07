@@ -1,23 +1,24 @@
 import React from 'react';
+import Layout from './components/Layout';
 
 const App: React.FC = () => {
   return (
-    <div style={{
-      width: '100%',
-      height: '100vh',
-      background: 'linear-gradient(135deg, #581c87 0%, #000000 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
-      <h1 style={{
-        fontSize: '3rem',
-        fontWeight: 'bold',
-        color: 'white'
+    <Layout>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh'
       }}>
-        WizardsOfWaverlyHacks
-      </h1>
-    </div>
+        <h1 style={{
+          fontSize: '3rem',
+          fontWeight: 'bold',
+          color: 'white'
+        }}>
+          WizardsOfWaverlyHacks
+        </h1>
+      </div>
+    </Layout>
   );
 };
 
