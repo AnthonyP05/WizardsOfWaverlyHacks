@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Layout from './components/Layout';
+import FloatingChat from './components/FloatingChat';
 
 const App: React.FC = () => {
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
   return (
     <Layout>
       <div style={{
@@ -18,6 +21,7 @@ const App: React.FC = () => {
           WizardsOfWaverlyHacks
         </h1>
       </div>
+      <FloatingChat isOpen={isChatOpen} setIsOpen={setIsChatOpen} />
     </Layout>
   );
 };
