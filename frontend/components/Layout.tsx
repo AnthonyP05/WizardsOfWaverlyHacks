@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import FloatingChat from './FloatingChat';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
   return (
     <div style={{
       position: 'relative',
@@ -31,6 +34,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <main style={{ position: 'relative', zIndex: 10 }}>
         {children}
       </main>
+      <FloatingChat isOpen={isChatOpen} setIsOpen={setIsChatOpen} />
       <style>{`
         @keyframes bounce {
           0%, 100% { transform: translateY(0); }

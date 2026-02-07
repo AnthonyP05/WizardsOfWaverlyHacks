@@ -30,8 +30,25 @@ const FloatingChat: React.FC<FloatingChatProps> = ({ isOpen, setIsOpen }) => {
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
 
-    // TODO: Add API call here
-    setMessages(prev => [...prev, { role: 'bot', text: 'The oracle is listening...' }]);
+    try {
+      const response = await fetch('http://localhost:3000/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: userMessage })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response');
+      }
+
+      const data = await response.json();
+      setMessages(prev => [...prev, { role: 'bot', text: data.reply }]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      setMessages(prev => [...prev, { role: 'bot', text: 'Alas, the connection to the mystical realm has broken. Please try again, seeker.' }]);
+    }
   };
 
   return (
