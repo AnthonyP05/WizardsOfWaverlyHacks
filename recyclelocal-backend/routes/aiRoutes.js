@@ -27,6 +27,9 @@ const {
   compareMaterials 
 } = require('../services/recyclingService');
 
+// Import geocoding service for coordinate-to-ZIP conversion
+const { coordsToZip } = require('../services/geocodingService');
+
 // ============================================
 // POST /api/ai/chat
 // ============================================
@@ -83,8 +86,11 @@ router.post('/chat', async (req, res) => {
 // REQUEST:
 //   Body: { 
 //     "image": "base64-encoded-image-data",
-//     "zip": "90210" (optional - enables local rule comparison)
+//     "zip": "90210",        (optional - enables local rule comparison)
+//     "lat": 34.0901,          (optional - alternative to zip)
+//     "lng": -118.4065          (optional - alternative to zip)
 //   }
+//   Note: Provide either "zip" OR "lat"/"lng". If both are given, zip takes priority.
 // 
 // RESPONSE (JSON):
 //   {
@@ -101,7 +107,7 @@ router.post('/chat', async (req, res) => {
 // 
 router.post('/analyze-image', async (req, res) => {
   try {
-    const { image, zip } = req.body;
+    const { image, zip, lat, lng } = req.body;
 
     // Validate image input
     if (!image || typeof image !== 'string') {
@@ -111,14 +117,30 @@ router.post('/analyze-image', async (req, res) => {
       });
     }
 
+    // Resolve ZIP code: use provided zip, or convert coordinates
+    let resolvedZip = null;
+    let locationInfo = null;
+
+    if (zip && /^\d{5}$/.test(zip)) {
+      resolvedZip = zip;
+    } else if (lat != null && lng != null) {
+      try {
+        locationInfo = await coordsToZip(lat, lng);
+        resolvedZip = locationInfo.zip;
+        console.log(`[GEO] Resolved (${lat}, ${lng}) -> ZIP ${resolvedZip}`);
+      } catch (error) {
+        console.error('Error converting coordinates to ZIP:', error.message);
+      }
+    }
+
     // Call Ollama service with vision model
     const analysis = await analyzeRecyclingImage(image);
 
-    // If ZIP code provided, compare against local recycling rules
+    // If we have a ZIP code, compare against local recycling rules
     let comparison = null;
-    if (zip && /^\d{5}$/.test(zip)) {
+    if (resolvedZip) {
       try {
-        const recyclingRules = await getRecyclingRules(zip);
+        const recyclingRules = await getRecyclingRules(resolvedZip);
         comparison = compareMaterials(analysis.items || [], recyclingRules);
       } catch (error) {
         console.error('Error fetching recycling rules for comparison:', error);
@@ -129,10 +151,16 @@ router.post('/analyze-image', async (req, res) => {
     // Build response
     const response = {
       analysis,
+      zip: resolvedZip || null,
       timestamp: new Date().toISOString()
     };
 
-    // Add comparison if ZIP was provided
+    // Add location info if we resolved from coordinates
+    if (locationInfo) {
+      response.location = locationInfo;
+    }
+
+    // Add comparison if we had a ZIP
     if (comparison) {
       response.comparison = comparison;
       response.canRecycle = comparison.summary?.notRecyclable === 0 && comparison.summary?.recyclable > 0;
@@ -145,6 +173,47 @@ router.post('/analyze-image', async (req, res) => {
     console.error('Error in image analysis endpoint:', error);
     res.status(500).json({
       error: 'Failed to analyze image',
+      details: error.message
+    });
+  }
+});
+
+// ============================================
+// POST /api/ai/geocode
+// ============================================
+// 
+// Convert browser geolocation coordinates to a ZIP code.
+// The frontend calls navigator.geolocation.getCurrentPosition()
+// and sends the coordinates here.
+// 
+// REQUEST:
+//   Body: { "lat": 34.0901, "lng": -118.4065 }
+// 
+// RESPONSE:
+//   { "zip": "90210", "city": "Beverly Hills", "state": "California" }
+// 
+router.post('/geocode', async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+
+    if (lat == null || lng == null) {
+      return res.status(400).json({
+        error: 'Missing lat/lng',
+        details: 'Request body must include "lat" and "lng" numbers'
+      });
+    }
+
+    const location = await coordsToZip(lat, lng);
+
+    res.json({
+      ...location,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error in geocode endpoint:', error);
+    res.status(500).json({
+      error: 'Failed to convert coordinates to ZIP code',
       details: error.message
     });
   }
