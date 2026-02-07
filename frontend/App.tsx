@@ -1,27 +1,19 @@
 import React, { useState } from 'react';
 import Layout from './components/Layout';
-import FloatingChat from './components/FloatingChat';
+import HomeView from './components/HomeView';
+
+export type AppView = 'home' | 'scanner' | 'about' | 'login' | 'signup';
 
 const App: React.FC = () => {
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [currentView, setCurrentView] = useState<AppView>('home');
+  const handleNavigate = (view: AppView | 'chat', e?: React.MouseEvent) => {
+    if (view === 'chat') return;
+    setCurrentView(view as AppView);
+  };
 
   return (
     <Layout>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh'
-      }}>
-        <h1 style={{
-          fontSize: '3rem',
-          fontWeight: 'bold',
-          color: 'white'
-        }}>
-          WizardsOfWaverlyHacks
-        </h1>
-      </div>
-      <FloatingChat isOpen={isChatOpen} setIsOpen={setIsChatOpen} />
+      <HomeView onNavigate={handleNavigate} />
     </Layout>
   );
 };
