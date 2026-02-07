@@ -21,6 +21,12 @@ const {
   analyzeRecyclingImage 
 } = require('../services/ollamaService');
 
+// Import recycling services for material comparison
+const { 
+  getRecyclingRules, 
+  compareMaterials 
+} = require('../services/recyclingService');
+
 // ============================================
 // POST /api/ai/chat
 // ============================================
@@ -70,23 +76,34 @@ router.post('/chat', async (req, res) => {
 // POST /api/ai/analyze-image
 // ============================================
 // 
-// Image analysis endpoint for identifying recyclable items.
+// Image analysis endpoint for identifying recyclable items
+// and comparing against local recycling rules.
 // Accepts images as base64-encoded strings.
 // 
 // REQUEST:
-//   Body: { "image": "base64-encoded-image-data" }
+//   Body: { 
+//     "image": "base64-encoded-image-data",
+//     "zip": "90210" (optional - enables local rule comparison)
+//   }
 // 
 // RESPONSE (JSON):
 //   {
-//     "analysis": "I can see several items in this image...",
+//     "analysis": {
+//       "items": [...],
+//       "summary": "..."
+//     },
+//     "comparison": {
+//       "items": [...with recyclability status...],
+//       "summary": { recyclable: 2, notRecyclable: 1, unknown: 0 }
+//     },
 //     "timestamp": "2026-02-07T..."
 //   }
 // 
 router.post('/analyze-image', async (req, res) => {
   try {
-    const { image } = req.body;
+    const { image, zip } = req.body;
 
-    // Validate input
+    // Validate image input
     if (!image || typeof image !== 'string') {
       return res.status(400).json({
         error: 'Missing or invalid image field',
@@ -97,11 +114,32 @@ router.post('/analyze-image', async (req, res) => {
     // Call Ollama service with vision model
     const analysis = await analyzeRecyclingImage(image);
 
-    // Return analysis
-    res.json({
+    // If ZIP code provided, compare against local recycling rules
+    let comparison = null;
+    if (zip && /^\d{5}$/.test(zip)) {
+      try {
+        const recyclingRules = await getRecyclingRules(zip);
+        comparison = compareMaterials(analysis.items || [], recyclingRules);
+      } catch (error) {
+        console.error('Error fetching recycling rules for comparison:', error);
+        comparison = { error: 'Failed to fetch local recycling rules' };
+      }
+    }
+
+    // Build response
+    const response = {
       analysis,
       timestamp: new Date().toISOString()
-    });
+    };
+
+    // Add comparison if ZIP was provided
+    if (comparison) {
+      response.comparison = comparison;
+      response.canRecycle = comparison.summary?.notRecyclable === 0 && comparison.summary?.recyclable > 0;
+    }
+
+    // Return analysis with optional comparison
+    res.json(response);
 
   } catch (error) {
     console.error('Error in image analysis endpoint:', error);

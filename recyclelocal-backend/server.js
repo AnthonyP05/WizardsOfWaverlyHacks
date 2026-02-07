@@ -40,8 +40,10 @@
 // ============================================
 // dotenv loads variables from .env file into process.env
 // This keeps API keys out of the code and out of git
+// Uses __dirname so it works regardless of where you run the command from
 // ============================================
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // ============================================
 // Import dependencies

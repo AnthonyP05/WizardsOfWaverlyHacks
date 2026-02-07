@@ -489,11 +489,195 @@ function deduplicateSources(searchResults) {
 }
 
 // ============================================
+// MATERIAL COMPARISON
+// ============================================
+// 
+// Compares detected materials from AI image analysis
+// against the recycling rules for a specific location.
+// 
+// ============================================
+
+/**
+ * Compare detected materials against recycling rules
+ * 
+ * @param {Array} detectedItems - Items from AI analysis [{name, materials, confidence, preparation}]
+ * @param {Object} recyclingRules - Rules from getRecyclingRules()
+ * @returns {Object} Comparison results with recyclability for each item
+ */
+function compareMaterials(detectedItems, recyclingRules) {
+  if (!detectedItems || !Array.isArray(detectedItems)) {
+    return { items: [], summary: { recyclable: 0, notRecyclable: 0, unknown: 0 } };
+  }
+
+  // Build lookup sets for quick matching
+  const acceptedMaterials = new Set();
+  const notAcceptedMaterials = new Set();
+  
+  // Add canonical names and variations to sets
+  for (const [canonical, variations] of Object.entries(MATERIAL_DATABASE.accepted)) {
+    acceptedMaterials.add(canonical.toLowerCase());
+    for (const v of variations) {
+      acceptedMaterials.add(v.toLowerCase());
+    }
+  }
+  
+  for (const [canonical, variations] of Object.entries(MATERIAL_DATABASE.notAccepted)) {
+    notAcceptedMaterials.add(canonical.toLowerCase());
+    for (const v of variations) {
+      notAcceptedMaterials.add(v.toLowerCase());
+    }
+  }
+
+  // Also add materials specifically accepted/not accepted in user's location
+  if (recyclingRules.accepted) {
+    for (const item of recyclingRules.accepted) {
+      acceptedMaterials.add(item.material.toLowerCase());
+    }
+  }
+  if (recyclingRules.not_accepted) {
+    for (const item of recyclingRules.not_accepted) {
+      notAcceptedMaterials.add(item.material.toLowerCase());
+    }
+  }
+
+  const results = [];
+  let recyclableCount = 0;
+  let notRecyclableCount = 0;
+  let unknownCount = 0;
+
+  for (const item of detectedItems) {
+    const itemMaterials = item.materials || [];
+    const itemName = (item.name || '').toLowerCase();
+    const materialResults = [];
+    let itemRecyclable = true;
+    let hasUnknown = false;
+
+    for (const material of itemMaterials) {
+      const materialLower = material.toLowerCase();
+      
+      // Use both item name and material for matching
+      // e.g. item "plastic bottle" with material "plastic" should match "Plastic Bottles"
+      const searchTerms = [itemName, materialLower];
+      
+      let isAccepted = false;
+      let isNotAccepted = false;
+      let matchedRule = null;
+      let acceptedMatchSpecificity = 0;
+      let notAcceptedMatchSpecificity = 0;
+
+      // Check accepted materials - track how specific the match is
+      for (const accepted of acceptedMaterials) {
+        for (const term of searchTerms) {
+          if (term.includes(accepted) || accepted.includes(term)) {
+            // More specific match = longer matched string
+            const specificity = Math.min(term.length, accepted.length);
+            if (specificity > acceptedMatchSpecificity) {
+              acceptedMatchSpecificity = specificity;
+              isAccepted = true;
+              matchedRule = recyclingRules.accepted?.find(r => 
+                r.material.toLowerCase().includes(term) || 
+                term.includes(r.material.toLowerCase())
+              );
+            }
+          }
+        }
+      }
+
+      // Check not accepted materials
+      for (const notAccepted of notAcceptedMaterials) {
+        for (const term of searchTerms) {
+          if (term.includes(notAccepted) || notAccepted.includes(term)) {
+            const specificity = Math.min(term.length, notAccepted.length);
+            if (specificity > notAcceptedMatchSpecificity) {
+              notAcceptedMatchSpecificity = specificity;
+              isNotAccepted = true;
+            }
+          }
+        }
+      }
+
+      // The more specific match wins
+      // e.g. "plastic bottle" matching "Plastic Bottles" (accepted, specificity=14) 
+      // beats "plastic" matching "Plastic Bags" (not accepted, specificity=7)
+      if (isAccepted && isNotAccepted) {
+        if (acceptedMatchSpecificity >= notAcceptedMatchSpecificity) {
+          isNotAccepted = false;
+        } else {
+          isAccepted = false;
+          matchedRule = recyclingRules.not_accepted?.find(r => 
+            r.material.toLowerCase().includes(itemName) || 
+            itemName.includes(r.material.toLowerCase()) ||
+            r.material.toLowerCase().includes(materialLower) || 
+            materialLower.includes(r.material.toLowerCase())
+          );
+        }
+      }
+
+      if (isNotAccepted) {
+        itemRecyclable = false;
+        materialResults.push({
+          material,
+          recyclable: false,
+          reason: matchedRule?.notes || 'Not accepted in curbside recycling'
+        });
+      } else if (isAccepted) {
+        materialResults.push({
+          material,
+          recyclable: true,
+          notes: matchedRule?.notes || null
+        });
+      } else {
+        hasUnknown = true;
+        materialResults.push({
+          material,
+          recyclable: 'unknown',
+          reason: 'Material not recognized - check local guidelines'
+        });
+      }
+    }
+
+    // Determine overall item recyclability
+    let overallStatus;
+    if (!itemRecyclable) {
+      overallStatus = 'not_recyclable';
+      notRecyclableCount++;
+    } else if (hasUnknown) {
+      overallStatus = 'check_locally';
+      unknownCount++;
+    } else {
+      overallStatus = 'recyclable';
+      recyclableCount++;
+    }
+
+    results.push({
+      name: item.name,
+      confidence: item.confidence,
+      preparation: item.preparation,
+      overallStatus,
+      materials: materialResults
+    });
+  }
+
+  return {
+    items: results,
+    location: recyclingRules.location || 'Unknown',
+    summary: {
+      recyclable: recyclableCount,
+      notRecyclable: notRecyclableCount,
+      unknown: unknownCount,
+      total: detectedItems.length
+    },
+    tips: recyclingRules.tips || []
+  };
+}
+
+// ============================================
 // Export the service
 // ============================================
 module.exports = {
   getRecyclingRules,
   extractRules,
+  compareMaterials,
   
   // Export helpers for testing
   extractNotes,
