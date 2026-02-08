@@ -1,5 +1,6 @@
 .env
-recyclelocal-backend\node_modules
-recyclelocal-backend\package-lock.json
-frontend\node_modules
-frontend\package-lock.json
+node_modules/
+package-lock.json
+.DS_Store
+dist/
+build/
