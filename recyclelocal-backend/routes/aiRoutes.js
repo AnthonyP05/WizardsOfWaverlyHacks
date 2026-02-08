@@ -7,7 +7,9 @@
  * 
  * AVAILABLE ENDPOINTS:
  * - POST /api/ai/chat - Chat with recycling assistant
- * - POST /api/ai/analyze-image - Analyze recycling items in image
+ * - POST /api/ai/analyze-image - Identify items/materials in an image
+ * - POST /api/ai/check-recyclability - Check materials against local rules + map
+ * - POST /api/ai/geocode - Convert coordinates to ZIP code
  * 
  * ============================================
  */
@@ -79,41 +81,87 @@ router.post('/chat', async (req, res) => {
 // POST /api/ai/analyze-image
 // ============================================
 // 
-// Image analysis endpoint for identifying recyclable items
-// and comparing against local recycling rules.
-// Accepts images as base64-encoded strings.
+// Image analysis ONLY — identifies items and materials.
+// Does NOT check local recycling rules (use /check-recyclability for that).
 // 
 // REQUEST:
-//   Body: { 
-//     "image": "base64-encoded-image-data",
-//     "zip": "90210",        (optional - enables local rule comparison)
-//     "lat": 34.0901,          (optional - alternative to zip)
-//     "lng": -118.4065          (optional - alternative to zip)
-//   }
-//   Note: Provide either "zip" OR "lat"/"lng". If both are given, zip takes priority.
+//   Body: { "image": "base64-encoded-image-data" }
 // 
 // RESPONSE (JSON):
 //   {
 //     "analysis": {
-//       "items": [...],
+//       "items": [{ "name": "plastic bottle", "materials": ["plastic"], "confidence": "high" }],
 //       "summary": "..."
-//     },
-//     "comparison": {
-//       "items": [...with recyclability status...],
-//       "summary": { recyclable: 2, notRecyclable: 1, unknown: 0 }
-//     },
-//     "timestamp": "2026-02-07T..."
+//     }
 //   }
 // 
 router.post('/analyze-image', async (req, res) => {
   try {
-    const { image, zip, lat, lng } = req.body;
+    const { image } = req.body;
 
     // Validate image input
     if (!image || typeof image !== 'string') {
       return res.status(400).json({
         error: 'Missing or invalid image field',
         details: 'Request body must include an "image" field with base64-encoded image data'
+      });
+    }
+
+    // Call Ollama service with vision model
+    const analysis = await analyzeRecyclingImage(image);
+
+    res.json({
+      analysis,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error in image analysis endpoint:', error);
+    res.status(500).json({
+      error: 'Failed to analyze image',
+      details: error.message
+    });
+  }
+});
+
+// ============================================
+// POST /api/ai/check-recyclability
+// ============================================
+// 
+// Takes a list of items/materials and checks them against
+// local recycling rules. If not recyclable, returns a
+// Google Maps embed URL to find nearby recycling locations.
+// 
+// This endpoint can receive items from analyze-image OR
+// from any other source (manual input, barcode scan, etc.)
+// 
+// REQUEST:
+//   Body: {
+//     "items": [
+//       { "name": "plastic bottle", "materials": ["plastic"], "confidence": "high" }
+//     ],
+//     "zip": "90210",           (optional)
+//     "lat": 34.0901,           (optional - alternative to zip)
+//     "lng": -118.4065          (optional - alternative to zip)
+//   }
+//   Note: Provide either "zip" OR "lat"/"lng". If both are given, zip takes priority.
+// 
+// RESPONSE (JSON):
+//   {
+//     "comparison": { ... },
+//     "canRecycle": true/false,
+//     "nearbyRecycling": { ... }   // only when canRecycle is false
+//   }
+// 
+router.post('/check-recyclability', async (req, res) => {
+  try {
+    const { items, zip, lat, lng } = req.body;
+
+    // Validate items input
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        error: 'Missing or invalid items field',
+        details: 'Request body must include an "items" array with at least one item'
       });
     }
 
@@ -133,25 +181,31 @@ router.post('/analyze-image', async (req, res) => {
       }
     }
 
-    // Call Ollama service with vision model
-    const analysis = await analyzeRecyclingImage(image);
+    if (!resolvedZip) {
+      return res.status(400).json({
+        error: 'Missing location',
+        details: 'Provide a "zip" code or "lat"/"lng" coordinates'
+      });
+    }
 
-    // If we have a ZIP code, compare against local recycling rules
+    // Compare against local recycling rules
     let comparison = null;
-    if (resolvedZip) {
-      try {
-        const recyclingRules = await getRecyclingRules(resolvedZip);
-        comparison = compareMaterials(analysis.items || [], recyclingRules);
-      } catch (error) {
-        console.error('Error fetching recycling rules for comparison:', error);
-        comparison = { error: 'Failed to fetch local recycling rules' };
-      }
+    try {
+      const recyclingRules = await getRecyclingRules(resolvedZip);
+      comparison = compareMaterials(items, recyclingRules);
+    } catch (error) {
+      console.error('Error fetching recycling rules for comparison:', error);
+      return res.status(500).json({
+        error: 'Failed to fetch local recycling rules',
+        details: error.message
+      });
     }
 
     // Build response
     const response = {
-      analysis,
-      zip: resolvedZip || null,
+      comparison,
+      zip: resolvedZip,
+      canRecycle: comparison.summary?.notRecyclable === 0 && comparison.summary?.recyclable > 0,
       timestamp: new Date().toISOString()
     };
 
@@ -160,37 +214,29 @@ router.post('/analyze-image', async (req, res) => {
       response.location = locationInfo;
     }
 
-    // Add comparison if we had a ZIP
-    if (comparison) {
-      response.comparison = comparison;
-      response.canRecycle = comparison.summary?.notRecyclable === 0 && comparison.summary?.recyclable > 0;
+    // If NOT recyclable locally, provide Google Maps embed
+    if (!response.canRecycle) {
+      const materials = items
+        .flatMap(item => item.materials || [item.name])
+        .filter(Boolean);
+      const searchMaterial = materials[0] || 'recycling';
+      const query = encodeURIComponent(`${searchMaterial} recycling near ${resolvedZip}`);
+      const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
 
-      // If item is NOT recyclable locally, provide a Google Maps embed
-      // to help the user find specialty recycling locations nearby
-      if (!response.canRecycle && resolvedZip) {
-        const materials = (analysis.items || [])
-          .flatMap(item => item.materials || [item.name])
-          .filter(Boolean);
-        const searchMaterial = materials[0] || 'recycling';
-        const query = encodeURIComponent(`${searchMaterial} recycling near ${resolvedZip}`);
-        const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
-
-        if (mapsKey) {
-          response.nearbyRecycling = {
-            searchQuery: `${searchMaterial} recycling near ${resolvedZip}`,
-            mapEmbedUrl: `https://www.google.com/maps/embed/v1/search?key=${mapsKey}&q=${query}`
-          };
-        }
+      if (mapsKey) {
+        response.nearbyRecycling = {
+          searchQuery: `${searchMaterial} recycling near ${resolvedZip}`,
+          mapEmbedUrl: `https://www.google.com/maps/embed/v1/search?key=${mapsKey}&q=${query}`
+        };
       }
     }
 
-    // Return analysis with optional comparison
     res.json(response);
 
   } catch (error) {
-    console.error('Error in image analysis endpoint:', error);
+    console.error('Error in check-recyclability endpoint:', error);
     res.status(500).json({
-      error: 'Failed to analyze image',
+      error: 'Failed to check recyclability',
       details: error.message
     });
   }
@@ -253,7 +299,9 @@ router.get('/health', async (req, res) => {
       ollamaUrl: url,
       endpoints: {
         'POST /api/ai/chat': 'Chat with recycling assistant',
-        'POST /api/ai/analyze-image': 'Analyze recycling items in images'
+        'POST /api/ai/analyze-image': 'Identify items/materials in an image (AI only)',
+        'POST /api/ai/check-recyclability': 'Check materials against local rules + map',
+        'POST /api/ai/geocode': 'Convert coordinates to ZIP code'
       }
     });
   } catch (error) {
