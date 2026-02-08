@@ -40,8 +40,10 @@
 // ============================================
 // dotenv loads variables from .env file into process.env
 // This keeps API keys out of the code and out of git
+// Uses __dirname so it works regardless of where you run the command from
 // ============================================
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // ============================================
 // Import dependencies
@@ -50,6 +52,7 @@ const express = require('express');
 
 // Import route handlers
 const recyclingRoutes = require('./routes/recyclingRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 // ============================================
 // Create Express app
@@ -123,6 +126,7 @@ if (process.env.DEBUG === 'true') {
  * This makes it easy to add versioning later (/api/v1, /api/v2)
  */
 app.use('/api', recyclingRoutes);
+app.use('/api/ai', aiRoutes);
 
 /**
  * Root Route
@@ -147,6 +151,17 @@ app.get('/', (req, res) => {
       },
       'GET /api/recycling/materials': {
         description: 'List all detectable materials'
+      },
+      'POST /api/ai/chat': {
+        description: 'Chat with AI recycling assistant',
+        body: { message: 'Can I recycle pizza boxes?' }
+      },
+      'POST /api/ai/analyze-image': {
+        description: 'Analyze recyclable items in an image',
+        body: { image: 'base64-encoded-image-data' }
+      },
+      'GET /api/ai/health': {
+        description: 'AI services health check'
       }
     },
     example: 'curl -X POST http://localhost:3000/api/recycling -H "Content-Type: application/json" -d \'{"zip":"90210"}\''
