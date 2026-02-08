@@ -1,8 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import FloatingChat from './FloatingChat';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Memoize background decorations to prevent re-rendering
+  const backgroundDecorations = useMemo(() => {
+    return [...Array(12)].map((_, i) => ({
+      id: i,
+      emoji: i % 2 === 0 ? '🌿' : '♻️',
+      top: Math.random() * 100,
+      left: Math.random() * 100,
+      duration: 3 + Math.random() * 4,
+      delay: Math.random() * 2
+    }));
+  }, []);
 
   return (
     <div style={{
@@ -14,20 +26,20 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       color: 'white'
     }}>
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        {[...Array(12)].map((_, i) => (
+        {backgroundDecorations.map((decoration) => (
           <div 
-            key={i}
+            key={decoration.id}
             style={{
               position: 'absolute',
               fontSize: '1.25rem',
               color: 'rgba(34, 197, 94, 0.2)',
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              animation: `bounce ${3 + Math.random() * 4}s infinite`,
-              animationDelay: `${Math.random() * 2}s`
+              top: `${decoration.top}%`,
+              left: `${decoration.left}%`,
+              animation: `bounce ${decoration.duration}s infinite`,
+              animationDelay: `${decoration.delay}s`
             }}
           >
-            {i % 2 === 0 ? '🌿' : '♻️'}
+            {decoration.emoji}
           </div>
         ))}
       </div>
