@@ -129,14 +129,18 @@ async function chatWithRecyclingAssistant(userMessage) {
     messages: [
       {
         role: 'system',
-        content: 'You are a helpful recycling assistant. Your job is to help users understand recycling rules, identify recyclable materials, and provide eco-friendly waste management tips. Always be encouraging and informative.'
+        content: 'You are a helpful recycling assistant. Your job is to help users understand recycling rules, identify recyclable materials, and provide eco-friendly waste management tips. Always be encouraging and informative. Keep responses concise and under 150 words. Use line breaks for better readability when listing items.'
       },
       {
         role: 'user',
         content: userMessage
       }
     ],
-    stream: false
+    stream: false,
+    options: {
+      num_predict: 200,
+      temperature: 0.7
+    }
   };
 
   const response = await makeOllamaRequest('/api/chat', payload);
