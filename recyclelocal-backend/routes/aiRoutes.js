@@ -128,63 +128,66 @@ router.post('/analyze-image', async (req, res) => {
 // POST /api/ai/check-recyclability
 // ============================================
 // 
-// Takes a list of items/materials and checks them against
-// local recycling rules. If not recyclable, returns a
-// Google Maps embed URL to find nearby recycling locations.
+// Takes a list of items/materials and the user's location
+// (lat/lng), resolves the ZIP internally, then checks against
+// local recycling rules. If not recyclable, returns a Google
+// Maps embed URL.
 // 
-// This endpoint can receive items from analyze-image OR
-// from any other source (manual input, barcode scan, etc.)
+// ITEM FORMAT:
+//   Each item needs at minimum a "name" field. The "materials"
+//   array is what gets matched against local rules. If "materials"
+//   is missing, the "name" is used as a fallback.
+//   { "name": "plastic bottle", "materials": ["plastic"], "confidence": "high" }
 // 
 // REQUEST:
 //   Body: {
 //     "items": [
-//       { "name": "plastic bottle", "materials": ["plastic"], "confidence": "high" }
+//       { "name": "plastic bottle", "materials": ["plastic"] }
 //     ],
-//     "zip": "90210",           (optional)
-//     "lat": 34.0901,           (optional - alternative to zip)
-//     "lng": -118.4065          (optional - alternative to zip)
+//     "lat": 34.0901,
+//     "lng": -118.4065
 //   }
-//   Note: Provide either "zip" OR "lat"/"lng". If both are given, zip takes priority.
 // 
 // RESPONSE (JSON):
 //   {
 //     "comparison": { ... },
+//     "zip": "90210",
 //     "canRecycle": true/false,
 //     "nearbyRecycling": { ... }   // only when canRecycle is false
 //   }
 // 
 router.post('/check-recyclability', async (req, res) => {
   try {
-    const { items, zip, lat, lng } = req.body;
+    const { items, lat, lng } = req.body;
 
     // Validate items input
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         error: 'Missing or invalid items field',
-        details: 'Request body must include an "items" array with at least one item'
+        details: 'Request body must include an "items" array with at least one item. Each item should have "name" and optionally "materials" (array of strings).'
       });
     }
 
-    // Resolve ZIP code: use provided zip, or convert coordinates
-    let resolvedZip = null;
-    let locationInfo = null;
-
-    if (zip && /^\d{5}$/.test(zip)) {
-      resolvedZip = zip;
-    } else if (lat != null && lng != null) {
-      try {
-        locationInfo = await coordsToZip(lat, lng);
-        resolvedZip = locationInfo.zip;
-        console.log(`[GEO] Resolved (${lat}, ${lng}) -> ZIP ${resolvedZip}`);
-      } catch (error) {
-        console.error('Error converting coordinates to ZIP:', error.message);
-      }
-    }
-
-    if (!resolvedZip) {
+    // Validate location
+    if (lat == null || lng == null) {
       return res.status(400).json({
         error: 'Missing location',
-        details: 'Provide a "zip" code or "lat"/"lng" coordinates'
+        details: 'Request body must include "lat" and "lng" numbers from browser geolocation.'
+      });
+    }
+
+    // Resolve coordinates to ZIP code
+    let resolvedZip = null;
+    let locationInfo = null;
+    try {
+      locationInfo = await coordsToZip(lat, lng);
+      resolvedZip = locationInfo.zip;
+      console.log(`[GEO] Resolved (${lat}, ${lng}) -> ZIP ${resolvedZip}`);
+    } catch (error) {
+      console.error('Error converting coordinates to ZIP:', error.message);
+      return res.status(500).json({
+        error: 'Failed to resolve location',
+        details: error.message
       });
     }
 
@@ -205,14 +208,10 @@ router.post('/check-recyclability', async (req, res) => {
     const response = {
       comparison,
       zip: resolvedZip,
+      location: locationInfo,
       canRecycle: comparison.summary?.notRecyclable === 0 && comparison.summary?.recyclable > 0,
       timestamp: new Date().toISOString()
     };
-
-    // Add location info if we resolved from coordinates
-    if (locationInfo) {
-      response.location = locationInfo;
-    }
 
     // If NOT recyclable locally, provide Google Maps embed
     if (!response.canRecycle) {
