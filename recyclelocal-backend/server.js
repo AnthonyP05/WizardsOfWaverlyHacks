@@ -169,7 +169,7 @@ app.get('/', (req, res) => {
         description: 'AI services health check'
       }
     },
-    example: `curl -X POST http://localhost:${PORT}}/api/recycling -H "Content-Type: application/json" -d \'{"zip":"90210"}\'`
+    example: `curl -X POST http://localhost:${PORT}/api/recycling -H "Content-Type: application/json" -d '{"zip":"90210"}'`
   });
 });
 
