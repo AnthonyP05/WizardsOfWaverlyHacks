@@ -10,6 +10,7 @@
  * - POST /api/ai/analyze-image - Identify items/materials in an image
  * - POST /api/ai/check-recyclability - Check materials against local rules + map
  * - POST /api/ai/geocode - Convert coordinates to ZIP code
+ * - GET  /api/ai/upc-lookup - UPCItemDB proxy (avoids CORS)
  * 
  * ============================================
  */
@@ -85,6 +86,49 @@ router.post('/chat', async (req, res) => {
 });
 
 // ============================================
+// GET /api/ai/upc-lookup
+// ============================================
+//
+// Proxies UPCItemDB lookup to avoid browser CORS restrictions.
+//
+// REQUEST:
+//   Query: ?upc=016000170995
+//
+// RESPONSE (JSON):
+//   Raw UPCItemDB response JSON
+//
+router.get('/upc-lookup', async (req, res) => {
+  try {
+    const upc = String(req.query.upc || '').trim();
+    if (!upc) {
+      return res.status(400).json({
+        error: 'Missing or invalid upc parameter',
+        example: '/api/ai/upc-lookup?upc=016000170995'
+      });
+    }
+
+    const lookupUrl = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(upc)}`;
+    const response = await fetch(lookupUrl);
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: 'UPC lookup failed',
+        status: response.status
+      });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Error in UPC lookup proxy:', error);
+    res.status(500).json({
+      error: 'Failed to lookup UPC',
+      details: error.message
+    });
+  }
+});
+
+// ============================================
 // POST /api/ai/analyze-image
 // ============================================
 // 
@@ -104,7 +148,7 @@ router.post('/chat', async (req, res) => {
 // 
 router.post('/analyze-image', async (req, res) => {
   try {
-    const { image, zip } = req.body;
+    const { image, zip, lat, lng } = req.body;
 
     // Validate image input
     if (!image || typeof image !== 'string') {
@@ -138,6 +182,8 @@ router.post('/analyze-image', async (req, res) => {
     res.json({
       analysis,
       zip: resolvedZip,
+      lat: lat || null,
+      lng: lng || null,
       timestamp: new Date().toISOString()
     });
 
@@ -262,6 +308,55 @@ router.post('/check-recyclability', async (req, res) => {
     console.error('Error in check-recyclability endpoint:', error);
     res.status(500).json({
       error: 'Failed to check recyclability',
+      details: error.message
+    });
+  }
+});
+
+// ============================================
+// GET /api/ai/nearby-recycling
+// ============================================
+//
+// Find nearby recycling centers using Google Maps search.
+//
+// REQUEST:
+//   Query: ?lat=34.0901&lng=-118.4065&material=plastic
+//
+// RESPONSE (JSON):
+//   { "mapEmbedUrl": "...", "searchQuery": "..." }
+//
+router.get('/nearby-recycling', async (req, res) => {
+  try {
+    const { lat, lng, material, zip } = req.query;
+
+    if (!lat || !lng) {
+      return res.status(400).json({
+        error: 'Missing lat/lng parameters',
+        example: '/api/ai/nearby-recycling?lat=34.0901&lng=-118.4065&material=plastic'
+      });
+    }
+
+    const searchMaterial = material || 'recycling';
+    const location = zip || `${lat},${lng}`;
+    const query = encodeURIComponent(`${searchMaterial} recycling near ${location}`);
+    const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
+
+    if (!mapsKey) {
+      return res.status(500).json({
+        error: 'Google Maps API key not configured',
+        details: 'Set GOOGLE_MAPS_API_KEY in environment variables'
+      });
+    }
+
+    res.json({
+      searchQuery: `${searchMaterial} recycling near ${location}`,
+      mapEmbedUrl: `https://www.google.com/maps/embed/v1/search?key=${mapsKey}&q=${query}`,
+      center: { lat: parseFloat(lat), lng: parseFloat(lng) }
+    });
+  } catch (error) {
+    console.error('Error in nearby-recycling endpoint:', error);
+    res.status(500).json({
+      error: 'Failed to generate map',
       details: error.message
     });
   }

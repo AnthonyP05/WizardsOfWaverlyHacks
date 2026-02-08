@@ -1,17 +1,27 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { isLoggedIn, getToken, getStoredUser } from '../services/authService';
 
 interface ScannerViewProps {
   onBack: () => void;
+  onShowMap: (analysisData: any, location: { lat: number; lng: number }) => void;
 }
 
-const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
+const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const scanFrameRef = useRef<number | null>(null);
+  const scanStartRef = useRef<number | null>(null);
+  const barcodeCountsRef = useRef<Record<string, number>>({});
+  const zxingStopRef = useRef<(() => void) | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(true);
+  const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
+  const [barcodeStatus, setBarcodeStatus] = useState<string | null>(null);
+  const [barcodeResult, setBarcodeResult] = useState<string | null>(null);
+  const [materialResult, setMaterialResult] = useState<string | null>(null);
+  const [imageStatus, setImageStatus] = useState<string | null>(null);
+  const [imageResult, setImageResult] = useState<string | null>(null);
 
   useEffect(() => {
     const startCamera = async () => {
@@ -32,103 +42,240 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
     startCamera();
 
     return () => {
+      if (scanFrameRef.current) {
+        cancelAnimationFrame(scanFrameRef.current);
+      }
+      if (zxingStopRef.current) {
+        zxingStopRef.current();
+      }
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
 
-  const captureImage = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    ctx.drawImage(video, 0, 0);
-    return canvas.toDataURL('image/jpeg').split(',')[1]; // Get base64 without prefix
+  const getMostFrequentBarcode = () => {
+    const entries = Object.entries(barcodeCountsRef.current);
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0][0];
   };
 
-  const handleImageCapture = async () => {
-    setAnalyzing(true);
-    setResult(null);
+  const fetchMaterialsForItem = async (itemName: string, itemDetails: string) => {
+    const prompt = `Return ONLY valid JSON in this exact format: { "items": [ { "name": "...", "materials": ["..."], "confidence": "high" } ] }.\n\nItem: ${itemName}\nDetails: ${itemDetails}`;
+    const response = await fetch('http://localhost:3000/api/ai/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: prompt })
+    });
 
-    try {
-      const imageBase64 = captureImage();
-      if (!imageBase64) {
-        throw new Error('Failed to capture image');
+    if (!response.ok) {
+      throw new Error('Failed to get AI materials response');
+    }
+
+    const data = await response.json();
+    return data.response as string;
+  };
+
+  const handleScanForBarcode = async () => {
+    if (!videoRef.current) return;
+
+    if (!('BarcodeDetector' in window)) {
+      await handleZxingScan();
+      return;
+    }
+
+    setIsBarcodeScanning(true);
+    setBarcodeStatus('Scanning for barcode (10s)...');
+    setBarcodeResult(null);
+    setMaterialResult(null);
+    barcodeCountsRef.current = {};
+    scanStartRef.current = performance.now();
+
+    const detector = new (window as any).BarcodeDetector({ formats: ['ean_13', 'upc_a', 'upc_e', 'ean_8'] });
+
+    // Scan frames for 10 seconds and keep the most frequent barcode.
+    const scanLoop = async () => {
+      if (!videoRef.current) return;
+      const now = performance.now();
+
+      if (scanStartRef.current && now - scanStartRef.current > 10000) {
+        setIsBarcodeScanning(false);
+        const best = getMostFrequentBarcode();
+        if (!best) {
+          setBarcodeStatus('No barcode found. Try again with better lighting.');
+          return;
+        }
+
+        setBarcodeResult(best);
+        setBarcodeStatus(`Barcode locked: ${best}`);
+
+        try {
+          const lookupUrl = `http://localhost:3000/api/ai/upc-lookup?upc=${encodeURIComponent(best)}`;
+          const upcRes = await fetch(lookupUrl);
+          if (!upcRes.ok) throw new Error('UPC lookup failed');
+          const upcData = await upcRes.json();
+          const item = upcData.items && upcData.items[0];
+          const itemName = item?.title || item?.description || item?.brand || 'unknown item';
+          const itemDetails = item ? JSON.stringify(item) : 'No details found';
+
+          const aiMaterials = await fetchMaterialsForItem(itemName, itemDetails);
+          setMaterialResult(aiMaterials);
+        } catch (err) {
+          console.error('Barcode flow error:', err);
+          setMaterialResult('Failed to fetch item materials.');
+        }
+        return;
       }
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
+      try {
+        const barcodes = await detector.detect(videoRef.current);
+        barcodes.forEach((barcode: any) => {
+          if (!barcode?.rawValue) return;
+          const value = String(barcode.rawValue).trim();
+          if (!value) return;
+          barcodeCountsRef.current[value] = (barcodeCountsRef.current[value] || 0) + 1;
+        });
+      } catch (err) {
+        console.error('Barcode detection error:', err);
+      }
+
+      scanFrameRef.current = requestAnimationFrame(scanLoop);
+    };
+
+    scanFrameRef.current = requestAnimationFrame(scanLoop);
+  };
+
+  const handleZxingScan = async () => {
+    if (!videoRef.current) return;
+
+    try {
+      const zxing = await import('@zxing/browser');
+      const reader = new (zxing as any).BrowserMultiFormatReader();
+
+      setIsBarcodeScanning(true);
+      setBarcodeStatus('Scanning for barcode (10s)...');
+      setBarcodeResult(null);
+      setMaterialResult(null);
+      barcodeCountsRef.current = {};
+
+      const controls = await reader.decodeFromVideoElement(
+        videoRef.current,
+        (result: any) => {
+          if (!result) return;
+          const value = String(result.getText ? result.getText() : result.text || result).trim();
+          if (!value) return;
+          barcodeCountsRef.current[value] = (barcodeCountsRef.current[value] || 0) + 1;
+        }
+      );
+
+      zxingStopRef.current = () => {
+        try {
+          if (controls && typeof controls.stop === 'function') {
+            controls.stop();
+          }
+          if (typeof reader.reset === 'function') {
+            reader.reset();
+          }
+        } catch (_) {
+          // Ignore cleanup errors
+        }
       };
-      let zip: string | undefined;
 
-      if (isLoggedIn()) {
-        headers['Authorization'] = `Bearer ${getToken()}`;
-        const user = getStoredUser();
-        zip = user?.zip_code || undefined;
-      }
+      setTimeout(async () => {
+        setIsBarcodeScanning(false);
+        if (zxingStopRef.current) {
+          zxingStopRef.current();
+        }
 
-      const response = await fetch('http://localhost:3000/api/ai/analyze-image', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ image: imageBase64, zip })
-      });
+        const best = getMostFrequentBarcode();
+        if (!best) {
+          setBarcodeStatus('No barcode found. Try again with better lighting.');
+          return;
+        }
 
-      if (!response.ok) {
-        throw new Error('Failed to analyze image');
-      }
+        setBarcodeResult(best);
+        setBarcodeStatus(`Barcode locked: ${best}`);
 
-      const data = await response.json();
-      setResult(data.analysis || 'No materials detected');
+        try {
+          const lookupUrl = `http://localhost:3000/api/ai/upc-lookup?upc=${encodeURIComponent(best)}`;
+          const upcRes = await fetch(lookupUrl);
+          if (!upcRes.ok) throw new Error('UPC lookup failed');
+          const upcData = await upcRes.json();
+          const item = upcData.items && upcData.items[0];
+          const itemName = item?.title || item?.description || item?.brand || 'unknown item';
+          const itemDetails = item ? JSON.stringify(item) : 'No details found';
+
+          const aiMaterials = await fetchMaterialsForItem(itemName, itemDetails);
+          setMaterialResult(aiMaterials);
+        } catch (err) {
+          console.error('Barcode flow error:', err);
+          setMaterialResult('Failed to fetch item materials.');
+        }
+      }, 10000);
     } catch (err) {
-      console.error('Analysis error:', err);
-      setResult('Failed to analyze image. Please try again.');
-    } finally {
-      setAnalyzing(false);
+      console.error('ZXing init failed:', err);
+      setBarcodeStatus('Failed to initialize barcode scanner.');
     }
   };
 
-  const handleBarcodeDetection = async (barcode: string) => {
-    setAnalyzing(true);
-    setResult(null);
+  const handleIdentifyItem = async () => {
+    if (!videoRef.current) return;
 
-    try {
-      const response = await fetch('http://localhost:3000/api/ai/barcode', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ barcode })
-      });
+    setImageStatus('Capturing image...');
+    setImageResult(null);
 
-      if (!response.ok) {
-        throw new Error('Failed to lookup barcode');
+    // Get user's location
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = videoRef.current!.videoWidth || 1280;
+        canvas.height = videoRef.current!.videoHeight || 720;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          setImageStatus('Failed to capture image.');
+          return;
+        }
+
+        ctx.drawImage(videoRef.current!, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const base64 = dataUrl.split(',')[1];
+
+        try {
+          const response = await fetch('http://localhost:3000/api/ai/analyze-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              image: base64,
+              lat: latitude,
+              lng: longitude
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Image analysis failed');
+          }
+
+          const data = await response.json();
+          setImageStatus('Analysis complete. Opening map...');
+          setImageResult(JSON.stringify(data.analysis, null, 2));
+          
+          // Navigate to map view with results
+          setTimeout(() => {
+            onShowMap(data.analysis, { lat: latitude, lng: longitude });
+          }, 1000);
+        } catch (err) {
+          console.error('Analyze image error:', err);
+          setImageStatus('Failed to analyze image.');
+        }
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        setImageStatus('Location access denied. Please enable location to find recycling centers.');
       }
-
-      const data = await response.json();
-      setResult(data.analysis || 'Product analysis complete');
-    } catch (err) {
-      console.error('Barcode lookup error:', err);
-      setResult('Failed to lookup barcode. Please try again.');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  // Simple barcode detection using pattern matching on captured frames
-  const scanForBarcode = () => {
-    setAnalyzing(true);
-    // For demo purposes - in production, use a proper barcode scanning library
-    setTimeout(() => {
-      alert("Fragment Identified: Astral Aluminum Core\nStatus: High Recycle Potential\nTransmuting to 5 Earth Mana...");
-      setScanning(true);
-    }, 1000);
+    );
   };
 
   return (
@@ -219,18 +366,54 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
         )}
       </div>
 
+      {(barcodeStatus || materialResult || imageStatus || imageResult) && (
+        <div className="mt-6 rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-white/70 font-mono space-y-3">
+          {barcodeStatus && (
+            <div>
+              <span className="text-green-400">BARCODE:</span> {barcodeStatus}
+            </div>
+          )}
+          {materialResult && (
+            <pre className="whitespace-pre-wrap text-green-200">{materialResult}</pre>
+          )}
+          {imageStatus && (
+            <div>
+              <span className="text-green-400">IMAGE:</span> {imageStatus}
+            </div>
+          )}
+          {imageResult && (
+            <pre className="whitespace-pre-wrap text-green-200">{imageResult}</pre>
+          )}
+        </div>
+      )}
+
       <div className="mt-8 flex justify-center">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={handleScanSimulation}
-          className="px-12 py-5 rounded-full bg-gradient-to-r from-green-600 to-green-400 text-black font-black tracking-widest uppercase text-sm glow-green transition-shadow shadow-2xl flex items-center space-x-3"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-            <path fillRule="evenodd" d="M4.755 10.059a7.5 7.5 0 0 1 12.548-3.364l1.903 1.903h-3.183a.75.75 0 1 0 0 1.5h4.992a.75.75 0 0 0 .75-.75V4.356a.75.75 0 0 0-1.5 0v3.18l-1.9-1.9A9 9 0 0 0 3.306 9.67a.75.75 0 1 0 1.45.388Zm15.408 3.352a.75.75 0 0 0-.919.53 7.5 7.5 0 0 1-12.548 3.364l-1.902-1.903h3.183a.75.75 0 0 0 0-1.5H2.984a.75.75 0 0 0-.75.75v4.992a.75.75 0 0 0 1.5 0v-3.18l1.9 1.9a9 9 0 0 0 15.059-4.035.75.75 0 0 0-.53-.918Z" clipRule="evenodd" />
-          </svg>
-          <span>Identify Fragment</span>
-        </motion.button>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleScanForBarcode}
+            disabled={isBarcodeScanning}
+            className="px-8 py-4 rounded-full bg-gradient-to-r from-green-600 to-green-400 text-black font-black tracking-widest uppercase text-xs glow-green transition-shadow shadow-2xl flex items-center space-x-3 disabled:opacity-60"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path d="M4 4h2v16H4V4Zm14 0h2v16h-2V4ZM8 4h1v16H8V4Zm3 0h2v16h-2V4Zm4 0h1v16h-1V4Z" />
+            </svg>
+            <span>{isBarcodeScanning ? 'Scanning...' : 'Scan for Barcode'}</span>
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleIdentifyItem}
+            className="px-8 py-4 rounded-full bg-gradient-to-r from-green-600 to-green-400 text-black font-black tracking-widest uppercase text-xs glow-green transition-shadow shadow-2xl flex items-center space-x-3"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm-7 2a1 1 0 0 1 1-1h2.172a3 3 0 0 0 2.121-.879l.586-.586A2 2 0 0 1 12.414 8h-.828a2 2 0 0 1 1.414-.586l.586.586A3 3 0 0 0 16.707 10H19a1 1 0 0 1 1 1v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6Z" clipRule="evenodd" />
+            </svg>
+            <span>Identify Item</span>
+          </motion.button>
+        </div>
       </div>
     </div>
   );
