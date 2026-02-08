@@ -116,6 +116,73 @@ router.post('/recycling', async (req, res) => {
 });
 
 // ============================================
+// POST /api/chat
+// ============================================
+// 
+// Chat endpoint for the Igris floating chat assistant.
+// 
+// REQUEST:
+//   Body: { "message": "user message" }
+// 
+// RESPONSE:
+//   { "reply": "assistant reply" }
+// 
+// ============================================
+router.post('/chat', async (req, res) => {
+  const { message } = req.body;
+
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ 
+      error: 'Please provide a message'
+    });
+  }
+
+  // Simple chat logic based on message content
+  const lowerMessage = message.toLowerCase();
+  let reply = '';
+
+  if (lowerMessage.includes('recycle') || lowerMessage.includes('waste') || lowerMessage.includes('material')) {
+    // Recycling-related question
+    const responses = [
+      'Ah, seeked you knowledge of the sacred art of recycling. Remember, the key is proper sorting and cleanliness. Rinse all containers before they journey to their new life.',
+      'The spirits of sustainability guide you well. Always check your local rules - what can be recycled varies by region. Would you like to know your specific area\'s rules?',
+      'Wise question, traveler. Not all materials are welcome in every realm. Plastics 1 and 2 are most universally accepted, while others require specific facilities.',
+      'The path to proper recycling is paved with knowledge. Flatten your cardboard, separate your metals, and never put hazardous materials in the bin.',
+      'Hmm, the question echoes through the halls of sustainability. Different municipalities have different rules. Provide a ZIP code and I shall reveal the secrets of your local recycling protocols.'
+    ];
+    reply = responses[Math.floor(Math.random() * responses.length)];
+  } else if (lowerMessage.includes('hello') || lowerMessage.includes('hi') || lowerMessage.includes('greetings')) {
+    // Greeting
+    const responses = [
+      'Greetings, wanderer. I am Igris, keeper of recycling wisdom. What knowledge do you seek?',
+      'Welcome, seeker. The whispers of sustainability guide us. How may I aid your noble journey?',
+      'Hail, noble one. I sense your presence at the threshold of ecological enlightenment.',
+      'Salutations. The spirits of the green earth welcome you. What brings you to this mystical chat?'
+    ];
+    reply = responses[Math.floor(Math.random() * responses.length)];
+  } else if (lowerMessage.includes('help') || lowerMessage.includes('how')) {
+    // Help request
+    const responses = [
+      'I am at your service, seeker. You may ask me about recycling practices, suggest a ZIP code to learn your local rules, or simply engage in philosophical discourse about sustainability.',
+      'The path is simple: ask me about what can be recycled, inquire about your local recycling practices, or seek wisdom on the proper disposal of waste.',
+      'Many questions welcome my attention. Speak of recycling, waste, materials, or share your ZIP code and I shall unveil your local secrets.'
+    ];
+    reply = responses[Math.floor(Math.random() * responses.length)];
+  } else {
+    // General response
+    const responses = [
+      'An intriguing query, but it ventures beyond the realm of recycling wisdom. Is there perhaps some matter of waste and sustainability that troubles you?',
+      'The spirits whisper, but this topic dwells outside my domain of knowledge. Might you ask of recycling or waste instead?',
+      'Your curiosity is admirable, yet this path diverges from the recycling mysteries I am bound to illuminate. What of sustainability may I help with?',
+      'While I appreciate your question, my essence is tied to the teachings of recycling. Perhaps rephrase your inquiry in terms of materials and waste?'
+    ];
+    reply = responses[Math.floor(Math.random() * responses.length)];
+  }
+
+  res.json({ reply });
+});
+
+// ============================================
 // GET /api/recycling/health
 // ============================================
 // 
