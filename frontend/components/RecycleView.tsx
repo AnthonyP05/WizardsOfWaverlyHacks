@@ -18,7 +18,14 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
   const [result, setResult] = useState<string | null>(null);
 
   useEffect(() => {
-    if (scanMode === 'select') return;
+    if (scanMode === 'select') {
+      // Clean up stream when returning to select mode
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        setStream(null);
+      }
+      return;
+    }
 
     const startCamera = async () => {
       try {
@@ -130,7 +137,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
 
   if (scanMode === 'select') {
     return (
-      <div className="relative min-h-screen flex flex-col items-center justify-center p-6">
+      <div className="relative min-h-screen flex flex-col items-center justify-center p-6" key="select-mode">
         <button 
           onClick={onBack}
           className="absolute top-6 left-6 flex items-center space-x-2 text-white/60 hover:text-white transition-colors"
@@ -147,34 +154,30 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl w-full">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => setScanMode('barcode')}
-            className="p-8 rounded-3xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/40 hover:border-purple-400 transition-all"
+            className="p-8 rounded-3xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/40 hover:border-purple-400 transition-all hover:scale-105 active:scale-95"
           >
             <div className="text-6xl mb-4">📊</div>
             <h3 className="text-xl font-bold text-purple-300 mb-2">Scan Barcode</h3>
             <p className="text-white/60 text-sm">Item has a barcode</p>
-          </motion.button>
+          </button>
 
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => setScanMode('image')}
-            className="p-8 rounded-3xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-400/40 hover:border-green-400 transition-all"
+            className="p-8 rounded-3xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-400/40 hover:border-green-400 transition-all hover:scale-105 active:scale-95"
           >
             <div className="text-6xl mb-4">📸</div>
             <h3 className="text-xl font-bold text-green-300 mb-2">No Barcode</h3>
             <p className="text-white/60 text-sm">Take a photo to identify</p>
-          </motion.button>
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-screen flex flex-col p-6">
+    <div className="relative min-h-screen flex flex-col p-6" key={`${scanMode}-mode`}>
       <div className="flex justify-between items-center mb-6">
         <button 
           onClick={() => {
