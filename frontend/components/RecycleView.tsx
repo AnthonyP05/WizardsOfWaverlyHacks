@@ -221,7 +221,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
 
       await html5Qrcode.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 150 } },
+        { fps: 10, qrbox: { width: 350, height: 200 } },
         (decodedText) => {
           const value = decodedText.trim();
           if (!value) return;
