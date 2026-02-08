@@ -128,8 +128,36 @@ export async function updateProfile(zip_code: string): Promise<void> {
 export function logout() {
   clearToken();
   clearUser();
+  window.location.reload(); // Refresh to update UI
 }
 
 export function isLoggedIn(): boolean {
   return !!getToken();
+}
+
+// Check if session is still valid on app load
+export async function checkSession(): Promise<User | null> {
+  const token = getToken();
+  if (!token) return null;
+
+  try {
+    const res = await fetch(`${API_BASE}/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      // Token invalid or expired
+      clearToken();
+      clearUser();
+      return null;
+    }
+
+    const data = await res.json();
+    storeUser(data.user);
+    return data.user;
+  } catch (error) {
+    clearToken();
+    clearUser();
+    return null;
+  }
 }

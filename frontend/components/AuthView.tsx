@@ -5,14 +5,14 @@ import { login, register } from '../services/authService';
 interface AuthViewProps {
   mode: 'login' | 'signup';
   onBack: () => void;
+  onAuthSuccess: (user: any) => void;
 }
 
-const AuthView: React.FC<AuthViewProps> = ({ mode, onBack }) => {
+const AuthView: React.FC<AuthViewProps> = ({ mode, onBack, onAuthSuccess }) => {
   const isLogin = mode === 'login';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [zipCode, setZipCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,12 +21,13 @@ const AuthView: React.FC<AuthViewProps> = ({ mode, onBack }) => {
     setError('');
     setLoading(true);
     try {
+      let response;
       if (isLogin) {
-        await login(username, password);
+        response = await login(username, password);
       } else {
-        await register(username, password, zipCode || undefined);
+        response = await register(username, password);
       }
-      onBack(); // go home on success
+      onAuthSuccess(response.user); // Pass user data to parent
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
     } finally {
@@ -77,18 +78,6 @@ const AuthView: React.FC<AuthViewProps> = ({ mode, onBack }) => {
         </div>
 
         <form className="space-y-6 relative z-10" onSubmit={handleSubmit}>
-          {!isLogin && (
-            <div className="space-y-1">
-              <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Zip Code</label>
-              <input 
-                type="text"
-                value={zipCode}
-                onChange={(e) => setZipCode(e.target.value)}
-                placeholder="90210" 
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-pink-400/50 transition-all placeholder:text-white/10"
-              />
-            </div>
-          )}
           <div className="space-y-1">
             <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Username</label>
             <input 

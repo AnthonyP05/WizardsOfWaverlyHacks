@@ -1,27 +1,50 @@
 import React from 'react';
 import { AppView } from '../App';
+import { logout, User } from '../services/authService';
 
 interface HomeViewProps {
   onNavigate: (view: AppView | 'chat', e?: React.MouseEvent) => void;
+  user: User | null;
+  onLogout: () => void;
 }
 
-const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
+const HomeView: React.FC<HomeViewProps> = ({ onNavigate, user, onLogout }) => {
+  const handleLogout = () => {
+    logout();
+    onLogout();
+  };
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-6 py-20 text-center relative">
-      {/* Top-right Login/Signup buttons */}
-      <div className="absolute top-8 right-8 flex space-x-4 z-20">
-        <button
-          className="px-6 py-2 rounded-full bg-purple-500/10 border border-purple-400/40 text-purple-300 font-bold text-sm tracking-widest uppercase hover:bg-purple-500/20 hover:border-purple-400 transition-all"
-          onClick={(e) => onNavigate('login', e)}
-        >
-          Login
-        </button>
-        <button
-          className="px-6 py-2 rounded-full bg-pink-500/10 border border-pink-400/40 text-pink-300 font-bold text-sm tracking-widest uppercase hover:bg-pink-500/20 hover:border-pink-400 transition-all"
-          onClick={(e) => onNavigate('signup', e)}
-        >
-          Signup
-        </button>
+      {/* Top-right Login/Signup or User info */}
+      <div className="absolute top-8 right-8 flex items-center space-x-4 z-20">
+        {user ? (
+          <>
+            <div className="px-4 py-2 rounded-full bg-green-500/10 border border-green-400/40 backdrop-blur-sm">
+              <span className="text-green-300 font-bold text-sm tracking-wider">✨ {user.username}</span>
+            </div>
+            <button
+              className="px-6 py-2 rounded-full bg-red-500/10 border border-red-400/40 text-red-300 font-bold text-sm tracking-widest uppercase hover:bg-red-500/20 hover:border-red-400 transition-all"
+              onClick={handleLogout}
+            >
+              Logout
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className="px-6 py-2 rounded-full bg-purple-500/10 border border-purple-400/40 text-purple-300 font-bold text-sm tracking-widest uppercase hover:bg-purple-500/20 hover:border-purple-400 transition-all"
+              onClick={(e) => onNavigate('login', e)}
+            >
+              Login
+            </button>
+            <button
+              className="px-6 py-2 rounded-full bg-pink-500/10 border border-pink-400/40 text-pink-300 font-bold text-sm tracking-widest uppercase hover:bg-pink-500/20 hover:border-pink-400 transition-all"
+              onClick={(e) => onNavigate('signup', e)}
+            >
+              Signup
+            </button>
+          </>
+        )}
       </div>
 
        {/* Top-left Earth Mana meter */}
