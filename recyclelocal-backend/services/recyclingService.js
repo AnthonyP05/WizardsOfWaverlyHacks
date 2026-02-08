@@ -617,12 +617,14 @@ function compareMaterials(detectedItems, recyclingRules) {
         itemRecyclable = false;
         materialResults.push({
           material,
+          status: 'not_recyclable',
           recyclable: false,
           reason: matchedRule?.notes || 'Not accepted in curbside recycling'
         });
       } else if (isAccepted) {
         materialResults.push({
           material,
+          status: 'recyclable',
           recyclable: true,
           notes: matchedRule?.notes || null
         });
@@ -630,6 +632,7 @@ function compareMaterials(detectedItems, recyclingRules) {
         hasUnknown = true;
         materialResults.push({
           material,
+          status: 'unknown',
           recyclable: 'unknown',
           reason: 'Material not recognized - check local guidelines'
         });
@@ -637,10 +640,15 @@ function compareMaterials(detectedItems, recyclingRules) {
     }
 
     // Determine overall item recyclability
+    // If any material is accepted and none are explicitly rejected, it's recyclable
     let overallStatus;
+    const hasRecyclableMaterial = materialResults.some(m => m.status === 'recyclable');
     if (!itemRecyclable) {
       overallStatus = 'not_recyclable';
       notRecyclableCount++;
+    } else if (hasRecyclableMaterial) {
+      overallStatus = 'recyclable';
+      recyclableCount++;
     } else if (hasUnknown) {
       overallStatus = 'check_locally';
       unknownCount++;

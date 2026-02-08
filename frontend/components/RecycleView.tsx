@@ -64,7 +64,16 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
   };
 
   const fetchMaterialsForItem = async (itemName: string, itemDetails: string) => {
-    const prompt = `Return ONLY valid JSON in this exact format: { "items": [ { "name": "...", "materials": ["..."], "confidence": "high" } ] }.\n\nItem: ${itemName}\nDetails: ${itemDetails}`;
+    const prompt = `You are a recycling assistant. Given a product, identify the PACKAGING MATERIALS (what the product is physically packaged in), NOT the food ingredients or contents inside.
+
+For example, a cereal box has packaging materials like: cardboard, plastic bag (inner liner), ink/dye.
+A soda can has: aluminum. A water bottle has: plastic (PET), plastic cap.
+
+Return ONLY valid JSON in this exact format: { "items": [ { "name": "...", "materials": ["cardboard", "plastic bag"], "confidence": "high" } ] }
+
+Do NOT list food ingredients, chemicals, vitamins, or nutritional contents. ONLY list physical packaging materials.
+
+Item: ${itemName}\nDetails: ${itemDetails}`;
     const response = await fetch(`${API_BASE}/api/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

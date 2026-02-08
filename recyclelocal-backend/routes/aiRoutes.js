@@ -280,7 +280,7 @@ router.post('/check-recyclability', async (req, res) => {
       comparison,
       zip: resolvedZip,
       location: locationInfo,
-      canRecycle: comparison.summary?.notRecyclable === 0 && comparison.summary?.recyclable > 0,
+      canRecycle: comparison.summary?.recyclable > 0 && comparison.summary?.notRecyclable === 0,
       timestamp: new Date().toISOString()
     };
 
