@@ -10,7 +10,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { pool } = require('../config/database');
+const { db } = require('../config/database');
 const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -38,11 +38,8 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if username already taken
-    const [existing] = await pool.execute(
-      'SELECT id FROM users WHERE username = ?',
-      [username]
-    );
-    if (existing.length > 0) {
+    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    if (existing) {
       return res.status(409).json({ error: 'Username already taken' });
     }
 
@@ -50,14 +47,13 @@ router.post('/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
     // Insert the user
-    const [result] = await pool.execute(
-      'INSERT INTO users (username, password_hash, zip_code) VALUES (?, ?, ?)',
-      [username, passwordHash, zip_code || null]
-    );
+    const result = db.prepare(
+      'INSERT INTO users (username, password_hash, zip_code) VALUES (?, ?, ?)'
+    ).run(username, passwordHash, zip_code || null);
 
     // Generate JWT
     const token = jwt.sign(
-      { id: result.insertId, username },
+      { id: result.lastInsertRowid, username },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
@@ -66,7 +62,7 @@ router.post('/register', async (req, res) => {
       message: 'Account created',
       token,
       user: {
-        id: result.insertId,
+        id: result.lastInsertRowid,
         username,
         zip_code: zip_code || null
       }
@@ -89,15 +85,12 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user
-    const [rows] = await pool.execute(
-      'SELECT id, username, password_hash, zip_code FROM users WHERE username = ?',
-      [username]
-    );
-    if (rows.length === 0) {
+    const user = db.prepare(
+      'SELECT id, username, password_hash, zip_code FROM users WHERE username = ?'
+    ).get(username);
+    if (!user) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
-
-    const user = rows[0];
 
     // Compare password with stored hash
     const isMatch = await bcrypt.compare(password, user.password_hash);
@@ -130,17 +123,16 @@ router.post('/login', async (req, res) => {
 // ============================================
 // GET /profile — Get current user info
 // ============================================
-router.get('/profile', authMiddleware, async (req, res) => {
+router.get('/profile', authMiddleware, (req, res) => {
   try {
-    const [rows] = await pool.execute(
-      'SELECT id, username, zip_code, created_at FROM users WHERE id = ?',
-      [req.user.id]
-    );
-    if (rows.length === 0) {
+    const user = db.prepare(
+      'SELECT id, username, zip_code, created_at FROM users WHERE id = ?'
+    ).get(req.user.id);
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ user: rows[0] });
+    res.json({ user });
   } catch (err) {
     console.error('Profile error:', err);
     res.status(500).json({ error: 'Failed to fetch profile' });
@@ -150,14 +142,13 @@ router.get('/profile', authMiddleware, async (req, res) => {
 // ============================================
 // PUT /profile — Update zip code
 // ============================================
-router.put('/profile', authMiddleware, async (req, res) => {
+router.put('/profile', authMiddleware, (req, res) => {
   try {
     const { zip_code } = req.body;
 
-    await pool.execute(
-      'UPDATE users SET zip_code = ? WHERE id = ?',
-      [zip_code || null, req.user.id]
-    );
+    db.prepare(
+      'UPDATE users SET zip_code = ? WHERE id = ?'
+    ).run(zip_code || null, req.user.id);
 
     res.json({ message: 'Profile updated', zip_code });
   } catch (err) {
