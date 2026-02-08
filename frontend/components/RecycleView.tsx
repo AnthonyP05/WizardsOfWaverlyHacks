@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { isLoggedIn, getToken, getStoredUser } from '../services/authService';
 
 interface ScannerViewProps {
   onBack: () => void;
@@ -69,12 +70,21 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
         throw new Error('Failed to capture image');
       }
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      let zip: string | undefined;
+
+      if (isLoggedIn()) {
+        headers['Authorization'] = `Bearer ${getToken()}`;
+        const user = getStoredUser();
+        zip = user?.zip_code || undefined;
+      }
+
       const response = await fetch('http://localhost:3000/api/ai/analyze-image', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: imageBase64 })
+        headers,
+        body: JSON.stringify({ image: imageBase64, zip })
       });
 
       if (!response.ok) {
