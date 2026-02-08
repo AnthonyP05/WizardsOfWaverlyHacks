@@ -4,7 +4,7 @@
 - Diego Parra
 - Adam Shavkin
 - Anthony Padilla
-- Chaston Chaston
+- Chaston Cao
 
 ## Purpose
 Allow users to scan barcodes, analyze recyclable information (material classification, recycling instructions, etc.), and use location to find county recycling rules (for example: no plastic bags, no styrofoam) along with other recycling resources (for example: AutoZone will recycle car batteries and motor oil). Based on this, provide the user with recycling options.
