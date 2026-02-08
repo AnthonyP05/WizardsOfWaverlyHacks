@@ -32,8 +32,8 @@ const {
 // Import geocoding service for coordinate-to-ZIP conversion
 const { coordsToZip } = require('../services/geocodingService');
 
-// Database pool for user ZIP lookup
-const { pool } = require('../config/database');
+// Database for user ZIP lookup
+const { db } = require('../config/database');
 
 // JWT for optional auth on analyze-image
 const jwt = require('jsonwebtoken');
@@ -121,12 +121,11 @@ router.post('/analyze-image', async (req, res) => {
       if (authHeader && authHeader.startsWith('Bearer ')) {
         try {
           const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
-          const [rows] = await pool.execute(
-            'SELECT zip_code FROM users WHERE id = ?',
-            [decoded.id]
-          );
-          if (rows.length > 0 && rows[0].zip_code) {
-            resolvedZip = rows[0].zip_code;
+          const row = db.prepare(
+            'SELECT zip_code FROM users WHERE id = ?'
+          ).get(decoded.id);
+          if (row && row.zip_code) {
+            resolvedZip = row.zip_code;
           }
         } catch (_) { /* token invalid or missing — continue without zip */ }
       }

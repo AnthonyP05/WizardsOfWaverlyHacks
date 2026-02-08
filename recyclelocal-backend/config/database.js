@@ -1,37 +1,50 @@
 /**
- * MySQL Database Connection
+ * SQLite Database Connection
  * 
- * Uses mysql2/promise for async/await support.
- * Connection pool handles multiple concurrent queries efficiently.
+ * Uses better-sqlite3 for a file-based database that runs anywhere —
+ * no MySQL install needed. The DB file is created automatically.
  * 
- * Required .env variables:
- *   DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+ * The database file lives at ./data/recyclelocal.db
  */
 
-const mysql = require('mysql2/promise');
+const Database = require('better-sqlite3');
+const path = require('path');
+const fs = require('fs');
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'recyclelocal',
-  port: process.env.DB_PORT || 3306,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+// Ensure the data directory exists
+const dataDir = path.join(__dirname, '..', 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const dbPath = path.join(dataDir, 'recyclelocal.db');
+const db = new Database(dbPath);
+
+// Enable WAL mode for better concurrent read performance
+db.pragma('journal_mode = WAL');
+
+// Create users table if it doesn't exist (auto-setup on first run)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    zip_code TEXT DEFAULT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )
+`);
 
 // Quick connectivity test
-async function testConnection() {
+function testConnection() {
   try {
-    const connection = await pool.getConnection();
-    console.log('   ✅ MySQL connected');
-    connection.release();
+    db.prepare('SELECT 1').get();
+    console.log('   ✅ SQLite connected (data/recyclelocal.db)');
     return true;
   } catch (err) {
-    console.error('   ❌ MySQL connection failed:', err.message);
+    console.error('   ❌ SQLite error:', err.message);
     return false;
   }
 }
 
-module.exports = { pool, testConnection };
+module.exports = { db, testConnection };
