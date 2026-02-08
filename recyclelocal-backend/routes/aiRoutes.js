@@ -164,6 +164,24 @@ router.post('/analyze-image', async (req, res) => {
     if (comparison) {
       response.comparison = comparison;
       response.canRecycle = comparison.summary?.notRecyclable === 0 && comparison.summary?.recyclable > 0;
+
+      // If item is NOT recyclable locally, provide a Google Maps embed
+      // to help the user find specialty recycling locations nearby
+      if (!response.canRecycle && resolvedZip) {
+        const materials = (analysis.items || [])
+          .flatMap(item => item.materials || [item.name])
+          .filter(Boolean);
+        const searchMaterial = materials[0] || 'recycling';
+        const query = encodeURIComponent(`${searchMaterial} recycling near ${resolvedZip}`);
+        const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
+
+        if (mapsKey) {
+          response.nearbyRecycling = {
+            searchQuery: `${searchMaterial} recycling near ${resolvedZip}`,
+            mapEmbedUrl: `https://www.google.com/maps/embed/v1/search?key=${mapsKey}&q=${query}`
+          };
+        }
+      }
     }
 
     // Return analysis with optional comparison
