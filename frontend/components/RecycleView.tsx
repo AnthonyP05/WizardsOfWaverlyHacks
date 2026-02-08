@@ -6,20 +6,13 @@ interface ScannerViewProps {
   onBack: () => void;
 }
 
-type ScanMode = 'select' | 'barcode' | 'image';
-
 const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [scanMode, setScanMode] = useState<ScanMode>('select');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(true);
 
   useEffect(() => {
-    if (scanMode === 'select') return;
-
     const startCamera = async () => {
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({ 
@@ -42,155 +35,31 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [scanMode]);
+  }, []);
 
-  const captureImage = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    ctx.drawImage(video, 0, 0);
-    return canvas.toDataURL('image/jpeg').split(',')[1]; // Get base64 without prefix
-  };
-
-  const handleImageCapture = async () => {
-    setAnalyzing(true);
-    setResult(null);
-
-    try {
-      const imageBase64 = captureImage();
-      if (!imageBase64) {
-        throw new Error('Failed to capture image');
-      }
-
-      const response = await fetch('http://localhost:3000/api/ai/analyze-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: imageBase64 })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to analyze image');
-      }
-
-      const data = await response.json();
-      setResult(data.analysis || 'No materials detected');
-    } catch (err) {
-      console.error('Analysis error:', err);
-      setResult('Failed to analyze image. Please try again.');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  const handleBarcodeDetection = async (barcode: string) => {
-    setAnalyzing(true);
-    setResult(null);
-
-    try {
-      const response = await fetch('http://localhost:3000/api/ai/barcode', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ barcode })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to lookup barcode');
-      }
-
-      const data = await response.json();
-      setResult(data.analysis || 'Product analysis complete');
-    } catch (err) {
-      console.error('Barcode lookup error:', err);
-      setResult('Failed to lookup barcode. Please try again.');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  // Simple barcode detection using pattern matching on captured frames
-  const scanForBarcode = () => {
-    setAnalyzing(true);
-    // For demo purposes - in production, use a proper barcode scanning library
+  const handleScanSimulation = () => {
+    setScanning(false);
     setTimeout(() => {
-      const mockBarcode = '012345678905'; // Example UPC
-      handleBarcodeDetection(mockBarcode);
-    }, 2000);
+      alert("Fragment Identified: Astral Aluminum Core\nStatus: High Recycle Potential\nTransmuting to 5 Earth Mana...");
+      setScanning(true);
+    }, 1000);
   };
-
-  if (scanMode === 'select') {
-    return (
-      <div className="relative min-h-screen flex flex-col items-center justify-center p-6">
-        <button 
-          onClick={onBack}
-          className="absolute top-6 left-6 flex items-center space-x-2 text-white/60 hover:text-white transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-          </svg>
-          <span className="uppercase text-sm tracking-widest font-bold font-mono">Back</span>
-        </button>
-
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-bold text-purple-300 mb-2">Identify Item</h2>
-          <p className="text-white/60 text-sm uppercase tracking-widest">Choose scanning method</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl w-full">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setScanMode('barcode')}
-            className="p-8 rounded-3xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-400/40 hover:border-purple-400 transition-all"
-          >
-            <div className="text-6xl mb-4">📊</div>
-            <h3 className="text-xl font-bold text-purple-300 mb-2">Scan Barcode</h3>
-            <p className="text-white/60 text-sm">Item has a barcode</p>
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setScanMode('image')}
-            className="p-8 rounded-3xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-400/40 hover:border-green-400 transition-all"
-          >
-            <div className="text-6xl mb-4">📸</div>
-            <h3 className="text-xl font-bold text-green-300 mb-2">No Barcode</h3>
-            <p className="text-white/60 text-sm">Take a photo to identify</p>
-          </motion.button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="relative min-h-screen flex flex-col p-6">
       <div className="flex justify-between items-center mb-6">
         <button 
-          onClick={() => {
-            setScanMode('select');
-            setResult(null);
-          }}
+          onClick={onBack}
           className="flex items-center space-x-2 text-white/60 hover:text-white transition-colors"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
           </svg>
-          <span className="uppercase text-sm tracking-widest font-bold font-mono">Change Mode</span>
+          <span className="uppercase text-sm tracking-widest font-bold font-mono">Abort Mission</span>
         </button>
         <div className="flex flex-col items-end">
             <div className="text-green-400 font-mono text-xs animate-pulse">
-                {scanMode === 'barcode' ? 'SCANNING_BARCODE...' : 'ANALYZING_IMAGE...'}
+                SCANNING_FOR_TRANSMUTABLES...
             </div>
             <div className="text-[8px] text-white/20 uppercase tracking-widest">Waverly Tech Mod v4.2</div>
         </div>
@@ -209,8 +78,6 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
               playsInline 
               className="absolute inset-0 w-full h-full object-cover opacity-60 grayscale-[0.5] contrast-125"
             />
-            <canvas ref={canvasRef} style={{ display: 'none' }} />
-            
             {/* HUD Overlay */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
               <div className="w-72 h-72 border border-green-500/20 relative">
@@ -225,7 +92,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
                 <div className="absolute top-1/2 left-1/2 -translate-y-1/2 w-10 h-[1px] bg-white/10" />
 
                 {/* Scanning line */}
-                {analyzing && (
+                {scanning && (
                   <motion.div 
                     animate={{ top: ['0%', '100%'] }}
                     transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
@@ -235,14 +102,33 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
               </div>
             </div>
 
-            {/* Result Display */}
-            {result && (
-              <div className="absolute bottom-24 left-6 right-6 bg-black/80 border border-green-400/50 rounded-2xl p-4 backdrop-blur-sm max-h-48 overflow-y-auto">
-                <div className="text-green-400 font-mono text-xs whitespace-pre-wrap">
-                  {result}
+            {/* Sidebar Data */}
+            <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col space-y-4 pointer-events-none">
+                {[
+                    { label: 'O2 SAT', val: '88%' },
+                    { label: 'ARCANE', val: 'SIG-X' },
+                    { label: 'E-WASTE', val: 'DETECT' }
+                ].map((stat, i) => (
+                    <div key={i} className="bg-black/40 border border-white/5 p-2 rounded-lg backdrop-blur-sm">
+                        <div className="text-[8px] text-white/40 uppercase">{stat.label}</div>
+                        <div className="text-[10px] text-green-400 font-mono">{stat.val}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Material Classification Footer */}
+            <div className="absolute bottom-6 left-10 right-10 flex justify-between items-end pointer-events-none">
+                <div className="font-mono text-[9px] text-green-400/80 leading-relaxed max-w-[200px]">
+                    <span className="text-white">// CLASSIFICATION ENGINE //</span><br/>
+                    POLYMER-P2: <span className="text-white">NOT FOUND</span><br/>
+                    CELLULOSE-F: <span className="text-white">SCANNING...</span><br/>
+                    METALLIC-A: <span className="text-green-500 font-bold">FRAGMENT DETECTED</span>
                 </div>
-              </div>
-            )}
+                <div className="flex flex-col items-end">
+                    <div className="text-[8px] text-white/20 uppercase tracking-widest font-bold">Earth Sync</div>
+                    <div className="text-2xl font-black text-green-400 italic">ACTIVE</div>
+                </div>
+            </div>
           </>
         )}
       </div>
@@ -251,31 +137,17 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={scanMode === 'barcode' ? scanForBarcode : handleImageCapture}
-          disabled={analyzing}
-          className="px-12 py-5 rounded-full bg-gradient-to-r from-green-600 to-green-400 text-black font-black tracking-widest uppercase text-sm glow-green transition-shadow shadow-2xl flex items-center space-x-3 disabled:opacity-50"
+          onClick={handleScanSimulation}
+          className="px-12 py-5 rounded-full bg-gradient-to-r from-green-600 to-green-400 text-black font-black tracking-widest uppercase text-sm glow-green transition-shadow shadow-2xl flex items-center space-x-3"
         >
-          {analyzing ? (
-            <>
-              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <span>Analyzing...</span>
-            </>
-          ) : (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                <path fillRule="evenodd" d="M4.755 10.059a7.5 7.5 0 0 1 12.548-3.364l1.903 1.903h-3.183a.75.75 0 1 0 0 1.5h4.992a.75.75 0 0 0 .75-.75V4.356a.75.75 0 0 0-1.5 0v3.18l-1.9-1.9A9 9 0 0 0 3.306 9.67a.75.75 0 1 0 1.45.388Zm15.408 3.352a.75.75 0 0 0-.919.53 7.5 7.5 0 0 1-12.548 3.364l-1.902-1.903h3.183a.75.75 0 0 0 0-1.5H2.984a.75.75 0 0 0-.75.75v4.992a.75.75 0 0 0 1.5 0v-3.18l1.9 1.9a9 9 0 0 0 15.059-4.035.75.75 0 0 0-.53-.918Z" clipRule="evenodd" />
-              </svg>
-              <span>{scanMode === 'barcode' ? 'Scan Barcode' : 'Capture & Analyze'}</span>
-            </>
-          )}
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+            <path fillRule="evenodd" d="M4.755 10.059a7.5 7.5 0 0 1 12.548-3.364l1.903 1.903h-3.183a.75.75 0 1 0 0 1.5h4.992a.75.75 0 0 0 .75-.75V4.356a.75.75 0 0 0-1.5 0v3.18l-1.9-1.9A9 9 0 0 0 3.306 9.67a.75.75 0 1 0 1.45.388Zm15.408 3.352a.75.75 0 0 0-.919.53 7.5 7.5 0 0 1-12.548 3.364l-1.902-1.903h3.183a.75.75 0 0 0 0-1.5H2.984a.75.75 0 0 0-.75.75v4.992a.75.75 0 0 0 1.5 0v-3.18l1.9 1.9a9 9 0 0 0 15.059-4.035.75.75 0 0 0-.53-.918Z" clipRule="evenodd" />
+          </svg>
+          <span>Identify Fragment</span>
         </motion.button>
       </div>
     </div>
   );
-
 };
 
 export default ScannerView;
