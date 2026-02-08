@@ -8,7 +8,9 @@
  *   PUT  /api/auth/profile
  */
 
-const API_BASE = 'http://localhost:3000/api/auth';
+import { API_BASE as ROOT_API } from '../config';
+
+const API_BASE = `${ROOT_API}/api/auth`;
 
 // ── Types ──────────────────────────────────────────
 

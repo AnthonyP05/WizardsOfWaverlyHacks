@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { API_BASE } from '../config';
 
 interface RecycleMapViewProps {
   onBack: () => void;
@@ -23,7 +24,7 @@ const RecycleMapView: React.FC<RecycleMapViewProps> = ({ onBack, analysisData, l
     const fetchLocationAndMap = async () => {
       try {
         // First, get the ZIP code from coordinates
-        const geocodeRes = await fetch('http://localhost:3000/api/ai/geocode', {
+        const geocodeRes = await fetch(`${API_BASE}/api/ai/geocode`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lat: location.lat, lng: location.lng })
@@ -38,7 +39,7 @@ const RecycleMapView: React.FC<RecycleMapViewProps> = ({ onBack, analysisData, l
 
         // Get nearby recycling centers map
         const mapRes = await fetch(
-          `http://localhost:3000/api/ai/nearby-recycling?lat=${location.lat}&lng=${location.lng}&material=${encodeURIComponent(primaryMaterial)}&zip=${geocodeData.zip}`
+          `${API_BASE}/api/ai/nearby-recycling?lat=${location.lat}&lng=${location.lng}&material=${encodeURIComponent(primaryMaterial)}&zip=${geocodeData.zip}`
         );
 
         if (!mapRes.ok) throw new Error('Failed to load map');

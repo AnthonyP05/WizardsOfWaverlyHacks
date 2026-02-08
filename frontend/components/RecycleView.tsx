@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Html5Qrcode } from 'html5-qrcode';
+import { API_BASE } from '../config';
 
 interface ScannerViewProps {
   onBack: () => void;
@@ -22,6 +23,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
   const [materialResult, setMaterialResult] = useState<string | null>(null);
   const [imageStatus, setImageStatus] = useState<string | null>(null);
   const [imageResult, setImageResult] = useState<string | null>(null);
+  const [recycleResult, setRecycleResult] = useState<any>(null);
 
   useEffect(() => {
     const startCamera = async () => {
@@ -63,7 +65,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
 
   const fetchMaterialsForItem = async (itemName: string, itemDetails: string) => {
     const prompt = `Return ONLY valid JSON in this exact format: { "items": [ { "name": "...", "materials": ["..."], "confidence": "high" } ] }.\n\nItem: ${itemName}\nDetails: ${itemDetails}`;
-    const response = await fetch('http://localhost:3000/api/ai/chat', {
+    const response = await fetch(`${API_BASE}/api/ai/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: prompt })
@@ -114,9 +116,12 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
 
     setBarcodeResult(best);
     setBarcodeStatus(`Barcode locked: ${best}`);
+    setRecycleResult(null);
 
     try {
-      const lookupUrl = `http://localhost:3000/api/ai/upc-lookup?upc=${encodeURIComponent(best)}`;
+      // Step 1: UPC lookup to get product info
+      setBarcodeStatus(`Looking up product for ${best}...`);
+      const lookupUrl = `${API_BASE}/api/ai/upc-lookup?upc=${encodeURIComponent(best)}`;
       const upcRes = await fetch(lookupUrl);
       if (!upcRes.ok) throw new Error('UPC lookup failed');
       const upcData = await upcRes.json();
@@ -124,11 +129,72 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
       const itemName = item?.title || item?.description || item?.brand || 'unknown item';
       const itemDetails = item ? JSON.stringify(item) : 'No details found';
 
+      // Step 2: Ask AI to figure out materials
+      setBarcodeStatus(`Identifying materials for: ${itemName}`);
       const aiMaterials = await fetchMaterialsForItem(itemName, itemDetails);
       setMaterialResult(aiMaterials);
-    } catch (err) {
+
+      // Step 3: Parse the AI materials JSON
+      let parsedItems: { name: string; materials: string[]; confidence?: string }[] = [];
+      try {
+        // The AI response may have markdown fences — strip them
+        const cleaned = aiMaterials.replace(/```json\n?|```\n?/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        if (parsed.items && Array.isArray(parsed.items)) {
+          parsedItems = parsed.items;
+        } else if (Array.isArray(parsed)) {
+          parsedItems = parsed;
+        }
+      } catch {
+        // Fallback: wrap product name as a single item
+        parsedItems = [{ name: itemName, materials: [itemName] }];
+      }
+
+      if (parsedItems.length === 0) {
+        parsedItems = [{ name: itemName, materials: [itemName] }];
+      }
+
+      // Step 4: Get user location and check recyclability
+      setBarcodeStatus('Getting your location...');
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+      });
+      const { latitude, longitude } = position.coords;
+
+      setBarcodeStatus('Checking local recycling rules...');
+      const checkRes = await fetch(`${API_BASE}/api/ai/check-recyclability`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: parsedItems,
+          lat: latitude,
+          lng: longitude
+        })
+      });
+
+      if (!checkRes.ok) throw new Error('Recyclability check failed');
+      const recycleData = await checkRes.json();
+      setRecycleResult(recycleData);
+
+      if (recycleData.canRecycle) {
+        setBarcodeStatus(`✓ Recyclable in your area (ZIP ${recycleData.zip})`);
+      } else {
+        setBarcodeStatus(`✗ Not recyclable curbside in ZIP ${recycleData.zip}`);
+        // Navigate to map to show nearby recycling centers
+        setTimeout(() => {
+          onShowMap(
+            { items: parsedItems },
+            { lat: latitude, lng: longitude }
+          );
+        }, 2000);
+      }
+    } catch (err: any) {
       console.error('Barcode flow error:', err);
-      setMaterialResult('Failed to fetch item materials.');
+      if (err?.code === 1) {
+        setBarcodeStatus('Location access denied. Enable location to check local rules.');
+      } else {
+        setMaterialResult('Failed to complete recyclability check.');
+      }
     }
   };
 
@@ -210,7 +276,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
         const base64 = dataUrl.split(',')[1];
 
         try {
-          const response = await fetch('http://localhost:3000/api/ai/analyze-image', {
+          const response = await fetch(`${API_BASE}/api/ai/analyze-image`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -337,7 +403,7 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
         )}
       </div>
 
-      {(barcodeStatus || materialResult || imageStatus || imageResult) && (
+      {(barcodeStatus || materialResult || recycleResult || imageStatus || imageResult) && (
         <div className="mt-6 rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-white/70 font-mono space-y-3">
           {barcodeStatus && (
             <div>
@@ -346,6 +412,30 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
           )}
           {materialResult && (
             <pre className="whitespace-pre-wrap text-green-200">{materialResult}</pre>
+          )}
+          {recycleResult && (
+            <div className="space-y-2">
+              <div className={recycleResult.canRecycle ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                {recycleResult.canRecycle ? '♻ RECYCLABLE LOCALLY' : '✗ NOT RECYCLABLE CURBSIDE'}
+              </div>
+              {recycleResult.comparison?.items?.map((item: any, i: number) => (
+                <div key={i} className="pl-2 border-l border-white/10">
+                  <span className="text-white">{item.name}:</span>{' '}
+                  {item.materials?.map((m: any, j: number) => (
+                    <span key={j} className={`inline-block mr-2 px-1 rounded ${
+                      m.status === 'recyclable' ? 'bg-green-900/50 text-green-300' :
+                      m.status === 'not_recyclable' ? 'bg-red-900/50 text-red-300' :
+                      'bg-yellow-900/50 text-yellow-300'
+                    }`}>
+                      {m.material} ({m.status})
+                    </span>
+                  ))}
+                </div>
+              ))}
+              {!recycleResult.canRecycle && recycleResult.nearbyRecycling && (
+                <div className="text-yellow-300 mt-1">Opening map to nearby recycling centers...</div>
+              )}
+            </div>
           )}
           {imageStatus && (
             <div>

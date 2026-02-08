@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { API_BASE } from '../config';
 
 interface Message {
   role: 'user' | 'bot';
@@ -31,7 +32,7 @@ const FloatingChat: React.FC<FloatingChatProps> = ({ isOpen, setIsOpen }) => {
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
 
     try {
-      const response = await fetch('http://localhost:3000/api/ai/chat', {
+      const response = await fetch(`${API_BASE}/api/ai/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
