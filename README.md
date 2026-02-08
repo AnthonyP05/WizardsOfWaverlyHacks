@@ -1,6 +1,7 @@
 # WizardsOfWaverlyHacks
 Team Members: Diego Parra, Adam Shavkin, Anthony Padilla, and Chaston Chaston
-Purpose: Allow users to enter scan barcodes,, we’ll analyze the recyclable information (i.e., material classification, recycling instructions, etc.), use user location to find county recycling rules (e.g., no plastic bags, no styrofoam) along with other recycling resources (ex. Autozone will recycle car batteries/motor oil). Based on this, provide the user with recycling options.
+Purpose: Allow users to enter scan barcodes,, we’ll analyze the recyclable information (i.e., material classification, recycling instructions, etc.), use user location to find county recycling rules (e.g., no 
+plastic bags, no styrofoam) along with other recycling resources (ex. Autozone will recycle car batteries/motor oil). Based on this, provide the user with recycling options.
 Tools: Github Copilot, ChatGPT
 Problems and Solutions: 
 a. Trying to find a way to scan barcodes
