@@ -31,7 +31,7 @@ const FloatingChat: React.FC<FloatingChatProps> = ({ isOpen, setIsOpen }) => {
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
 
     try {
-      const response = await fetch('http://localhost:3000/api/chat', {
+      const response = await fetch('http://localhost:3000/api/ai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -44,7 +44,7 @@ const FloatingChat: React.FC<FloatingChatProps> = ({ isOpen, setIsOpen }) => {
       }
 
       const data = await response.json();
-      setMessages(prev => [...prev, { role: 'bot', text: data.reply }]);
+      setMessages(prev => [...prev, { role: 'bot', text: data.response }]);
     } catch (error) {
       console.error('Chat error:', error);
       setMessages(prev => [...prev, { role: 'bot', text: 'Alas, the connection to the mystical realm has broken. Please try again, seeker.' }]);
@@ -141,7 +141,10 @@ const FloatingChat: React.FC<FloatingChatProps> = ({ isOpen, setIsOpen }) => {
                   lineHeight: '1.5',
                   backgroundColor: msg.role === 'user' ? 'rgba(168, 85, 247, 0.3)' : 'rgba(34, 197, 94, 0.1)',
                   color: msg.role === 'user' ? '#e9d5ff' : '#86efac',
-                  border: msg.role === 'user' ? '1px solid rgba(168, 85, 247, 0.2)' : '1px solid rgba(34, 197, 94, 0.2)'
+                  border: msg.role === 'user' ? '1px solid rgba(168, 85, 247, 0.2)' : '1px solid rgba(34, 197, 94, 0.2)',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  overflowWrap: 'break-word'
                 }}>
                   {msg.text}
                 </div>
