@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { isLoggedIn, getToken, getStoredUser } from '../services/authService';
 
 interface ScannerViewProps {
   onBack: () => void;
@@ -37,8 +38,93 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack }) => {
     };
   }, []);
 
-  const handleScanSimulation = () => {
-    setScanning(false);
+  const captureImage = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.drawImage(video, 0, 0);
+    return canvas.toDataURL('image/jpeg').split(',')[1]; // Get base64 without prefix
+  };
+
+  const handleImageCapture = async () => {
+    setAnalyzing(true);
+    setResult(null);
+
+    try {
+      const imageBase64 = captureImage();
+      if (!imageBase64) {
+        throw new Error('Failed to capture image');
+      }
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      let zip: string | undefined;
+
+      if (isLoggedIn()) {
+        headers['Authorization'] = `Bearer ${getToken()}`;
+        const user = getStoredUser();
+        zip = user?.zip_code || undefined;
+      }
+
+      const response = await fetch('http://localhost:3000/api/ai/analyze-image', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ image: imageBase64, zip })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze image');
+      }
+
+      const data = await response.json();
+      setResult(data.analysis || 'No materials detected');
+    } catch (err) {
+      console.error('Analysis error:', err);
+      setResult('Failed to analyze image. Please try again.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleBarcodeDetection = async (barcode: string) => {
+    setAnalyzing(true);
+    setResult(null);
+
+    try {
+      const response = await fetch('http://localhost:3000/api/ai/barcode', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ barcode })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to lookup barcode');
+      }
+
+      const data = await response.json();
+      setResult(data.analysis || 'Product analysis complete');
+    } catch (err) {
+      console.error('Barcode lookup error:', err);
+      setResult('Failed to lookup barcode. Please try again.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // Simple barcode detection using pattern matching on captured frames
+  const scanForBarcode = () => {
+    setAnalyzing(true);
+    // For demo purposes - in production, use a proper barcode scanning library
     setTimeout(() => {
       alert("Fragment Identified: Astral Aluminum Core\nStatus: High Recycle Potential\nTransmuting to 5 Earth Mana...");
       setScanning(true);

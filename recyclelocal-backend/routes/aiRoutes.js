@@ -32,6 +32,13 @@ const {
 // Import geocoding service for coordinate-to-ZIP conversion
 const { coordsToZip } = require('../services/geocodingService');
 
+// Database pool for user ZIP lookup
+const { pool } = require('../config/database');
+
+// JWT for optional auth on analyze-image
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'recyclelocal-dev-secret-change-in-production';
+
 // ============================================
 // POST /api/ai/chat
 // ============================================
@@ -97,7 +104,7 @@ router.post('/chat', async (req, res) => {
 // 
 router.post('/analyze-image', async (req, res) => {
   try {
-    const { image } = req.body;
+    const { image, zip } = req.body;
 
     // Validate image input
     if (!image || typeof image !== 'string') {
@@ -107,11 +114,30 @@ router.post('/analyze-image', async (req, res) => {
       });
     }
 
+    // Resolve ZIP: body > JWT user's saved zip > null
+    let resolvedZip = zip || null;
+    if (!resolvedZip) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+          const [rows] = await pool.execute(
+            'SELECT zip_code FROM users WHERE id = ?',
+            [decoded.id]
+          );
+          if (rows.length > 0 && rows[0].zip_code) {
+            resolvedZip = rows[0].zip_code;
+          }
+        } catch (_) { /* token invalid or missing — continue without zip */ }
+      }
+    }
+
     // Call Ollama service with vision model
     const analysis = await analyzeRecyclingImage(image);
 
     res.json({
       analysis,
+      zip: resolvedZip,
       timestamp: new Date().toISOString()
     });
 

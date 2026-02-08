@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { login, register } from '../services/authService';
 
 interface AuthViewProps {
   mode: 'login' | 'signup';
@@ -8,6 +9,30 @@ interface AuthViewProps {
 
 const AuthView: React.FC<AuthViewProps> = ({ mode, onBack }) => {
   const isLogin = mode === 'login';
+
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [zipCode, setZipCode] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      if (isLogin) {
+        await login(username, password);
+      } else {
+        await register(username, password, zipCode || undefined);
+      }
+      onBack(); // go home on success
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6">
@@ -51,40 +76,52 @@ const AuthView: React.FC<AuthViewProps> = ({ mode, onBack }) => {
           </p>
         </div>
 
-        <form className="space-y-6 relative z-10" onSubmit={(e) => e.preventDefault()}>
+        <form className="space-y-6 relative z-10" onSubmit={handleSubmit}>
           {!isLogin && (
             <div className="space-y-1">
-              <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Full Name</label>
+              <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Zip Code</label>
               <input 
-                type="text" 
-                placeholder="Archmage Doe" 
+                type="text"
+                value={zipCode}
+                onChange={(e) => setZipCode(e.target.value)}
+                placeholder="90210" 
                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-pink-400/50 transition-all placeholder:text-white/10"
               />
             </div>
           )}
           <div className="space-y-1">
-            <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Email Address</label>
+            <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Username</label>
             <input 
-              type="email" 
-              placeholder="mage@waverly.hacks" 
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="recycler123" 
               className={`w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none transition-all placeholder:text-white/10 ${isLogin ? 'focus:border-purple-400/50' : 'focus:border-pink-400/50'}`}
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Arcane Phrase</label>
+            <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold ml-4">Password</label>
             <input 
-              type="password" 
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••" 
               className={`w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none transition-all placeholder:text-white/10 ${isLogin ? 'focus:border-purple-400/50' : 'focus:border-pink-400/50'}`}
             />
           </div>
 
+          {error && (
+            <p className="text-red-400 text-xs text-center font-bold">{error}</p>
+          )}
+
           <motion.button
+            type="submit"
+            disabled={loading}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className={`w-full py-4 rounded-2xl font-black text-black tracking-[0.2em] uppercase text-sm mt-4 shadow-xl ${isLogin ? 'bg-purple-400 glow-purple' : 'bg-pink-400 glow-pink'}`}
+            className={`w-full py-4 rounded-2xl font-black text-black tracking-[0.2em] uppercase text-sm mt-4 shadow-xl disabled:opacity-50 ${isLogin ? 'bg-purple-400 glow-purple' : 'bg-pink-400 glow-pink'}`}
           >
-            {isLogin ? 'Unlock Portal' : 'Bind Soul'}
+            {loading ? 'Loading...' : isLogin ? 'Unlock Portal' : 'Bind Soul'}
           </motion.button>
         </form>
 
