@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface ScannerViewProps {
   onBack: () => void;
@@ -9,10 +10,9 @@ interface ScannerViewProps {
 
 const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const scanFrameRef = useRef<number | null>(null);
-  const scanStartRef = useRef<number | null>(null);
+  const barcodeScannerRef = useRef<Html5Qrcode | null>(null);
+  const barcodeTimeoutRef = useRef<number | null>(null);
   const barcodeCountsRef = useRef<Record<string, number>>({});
-  const zxingStopRef = useRef<(() => void) | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(true);
@@ -42,11 +42,11 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
     startCamera();
 
     return () => {
-      if (scanFrameRef.current) {
-        cancelAnimationFrame(scanFrameRef.current);
+      if (barcodeScannerRef.current) {
+        try { barcodeScannerRef.current.stop(); } catch (_) {}
       }
-      if (zxingStopRef.current) {
-        zxingStopRef.current();
+      if (barcodeTimeoutRef.current) {
+        clearTimeout(barcodeTimeoutRef.current);
       }
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
@@ -77,145 +77,111 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
     return data.response as string;
   };
 
-  const handleScanForBarcode = async () => {
-    if (!videoRef.current) return;
+  const stopBarcodeScanner = async () => {
+    if (barcodeScannerRef.current) {
+      try { await barcodeScannerRef.current.stop(); } catch (_) {}
+      barcodeScannerRef.current = null;
+    }
+    if (barcodeTimeoutRef.current) {
+      clearTimeout(barcodeTimeoutRef.current);
+      barcodeTimeoutRef.current = null;
+    }
+  };
 
-    if (!('BarcodeDetector' in window)) {
-      await handleZxingScan();
+  const restartCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err) {
+      console.error('Failed to restart camera:', err);
+    }
+  };
+
+  const processBarcodeResult = async (best: string | null) => {
+    setIsBarcodeScanning(false);
+    await stopBarcodeScanner();
+    await restartCamera();
+
+    if (!best) {
+      setBarcodeStatus('No barcode found. Try again with better lighting.');
       return;
     }
 
+    setBarcodeResult(best);
+    setBarcodeStatus(`Barcode locked: ${best}`);
+
+    try {
+      const lookupUrl = `http://localhost:3000/api/ai/upc-lookup?upc=${encodeURIComponent(best)}`;
+      const upcRes = await fetch(lookupUrl);
+      if (!upcRes.ok) throw new Error('UPC lookup failed');
+      const upcData = await upcRes.json();
+      const item = upcData.items && upcData.items[0];
+      const itemName = item?.title || item?.description || item?.brand || 'unknown item';
+      const itemDetails = item ? JSON.stringify(item) : 'No details found';
+
+      const aiMaterials = await fetchMaterialsForItem(itemName, itemDetails);
+      setMaterialResult(aiMaterials);
+    } catch (err) {
+      console.error('Barcode flow error:', err);
+      setMaterialResult('Failed to fetch item materials.');
+    }
+  };
+
+  const handleScanForBarcode = async () => {
+    // Stop existing camera (mobile only allows one stream at a time)
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    }
+
     setIsBarcodeScanning(true);
-    setBarcodeStatus('Scanning for barcode (10s)...');
+    setBarcodeStatus('Scanning for barcode...');
     setBarcodeResult(null);
     setMaterialResult(null);
     barcodeCountsRef.current = {};
-    scanStartRef.current = performance.now();
-
-    const detector = new (window as any).BarcodeDetector({ formats: ['ean_13', 'upc_a', 'upc_e', 'ean_8'] });
-
-    // Scan frames for 10 seconds and keep the most frequent barcode.
-    const scanLoop = async () => {
-      if (!videoRef.current) return;
-      const now = performance.now();
-
-      if (scanStartRef.current && now - scanStartRef.current > 10000) {
-        setIsBarcodeScanning(false);
-        const best = getMostFrequentBarcode();
-        if (!best) {
-          setBarcodeStatus('No barcode found. Try again with better lighting.');
-          return;
-        }
-
-        setBarcodeResult(best);
-        setBarcodeStatus(`Barcode locked: ${best}`);
-
-        try {
-          const lookupUrl = `http://localhost:3000/api/ai/upc-lookup?upc=${encodeURIComponent(best)}`;
-          const upcRes = await fetch(lookupUrl);
-          if (!upcRes.ok) throw new Error('UPC lookup failed');
-          const upcData = await upcRes.json();
-          const item = upcData.items && upcData.items[0];
-          const itemName = item?.title || item?.description || item?.brand || 'unknown item';
-          const itemDetails = item ? JSON.stringify(item) : 'No details found';
-
-          const aiMaterials = await fetchMaterialsForItem(itemName, itemDetails);
-          setMaterialResult(aiMaterials);
-        } catch (err) {
-          console.error('Barcode flow error:', err);
-          setMaterialResult('Failed to fetch item materials.');
-        }
-        return;
-      }
-
-      try {
-        const barcodes = await detector.detect(videoRef.current);
-        barcodes.forEach((barcode: any) => {
-          if (!barcode?.rawValue) return;
-          const value = String(barcode.rawValue).trim();
-          if (!value) return;
-          barcodeCountsRef.current[value] = (barcodeCountsRef.current[value] || 0) + 1;
-        });
-      } catch (err) {
-        console.error('Barcode detection error:', err);
-      }
-
-      scanFrameRef.current = requestAnimationFrame(scanLoop);
-    };
-
-    scanFrameRef.current = requestAnimationFrame(scanLoop);
-  };
-
-  const handleZxingScan = async () => {
-    if (!videoRef.current) return;
 
     try {
-      const zxing = await import('@zxing/browser');
-      const reader = new (zxing as any).BrowserMultiFormatReader();
+      const html5Qrcode = new Html5Qrcode('barcode-scanner-region');
+      barcodeScannerRef.current = html5Qrcode;
+      let resolved = false;
 
-      setIsBarcodeScanning(true);
-      setBarcodeStatus('Scanning for barcode (10s)...');
-      setBarcodeResult(null);
-      setMaterialResult(null);
-      barcodeCountsRef.current = {};
-
-      const controls = await reader.decodeFromVideoElement(
-        videoRef.current,
-        (result: any) => {
-          if (!result) return;
-          const value = String(result.getText ? result.getText() : result.text || result).trim();
+      await html5Qrcode.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        (decodedText) => {
+          const value = decodedText.trim();
           if (!value) return;
           barcodeCountsRef.current[value] = (barcodeCountsRef.current[value] || 0) + 1;
-        }
+
+          // Lock on after 3 consistent reads for reliability
+          if (!resolved && barcodeCountsRef.current[value] >= 3) {
+            resolved = true;
+            setTimeout(() => processBarcodeResult(value), 0);
+          }
+        },
+        () => {} // ignore per-frame "no barcode" errors
       );
 
-      zxingStopRef.current = () => {
-        try {
-          if (controls && typeof controls.stop === 'function') {
-            controls.stop();
-          }
-          if (typeof reader.reset === 'function') {
-            reader.reset();
-          }
-        } catch (_) {
-          // Ignore cleanup errors
-        }
-      };
-
-      setTimeout(async () => {
-        setIsBarcodeScanning(false);
-        if (zxingStopRef.current) {
-          zxingStopRef.current();
-        }
-
-        const best = getMostFrequentBarcode();
-        if (!best) {
-          setBarcodeStatus('No barcode found. Try again with better lighting.');
-          return;
-        }
-
-        setBarcodeResult(best);
-        setBarcodeStatus(`Barcode locked: ${best}`);
-
-        try {
-          const lookupUrl = `http://localhost:3000/api/ai/upc-lookup?upc=${encodeURIComponent(best)}`;
-          const upcRes = await fetch(lookupUrl);
-          if (!upcRes.ok) throw new Error('UPC lookup failed');
-          const upcData = await upcRes.json();
-          const item = upcData.items && upcData.items[0];
-          const itemName = item?.title || item?.description || item?.brand || 'unknown item';
-          const itemDetails = item ? JSON.stringify(item) : 'No details found';
-
-          const aiMaterials = await fetchMaterialsForItem(itemName, itemDetails);
-          setMaterialResult(aiMaterials);
-        } catch (err) {
-          console.error('Barcode flow error:', err);
-          setMaterialResult('Failed to fetch item materials.');
+      // Timeout after 10 seconds — use best result so far
+      barcodeTimeoutRef.current = window.setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          processBarcodeResult(getMostFrequentBarcode());
         }
       }, 10000);
     } catch (err) {
-      console.error('ZXing init failed:', err);
-      setBarcodeStatus('Failed to initialize barcode scanner.');
+      console.error('Barcode scanner failed:', err);
+      setBarcodeStatus('Failed to start barcode scanner.');
+      setIsBarcodeScanning(false);
+      await restartCamera();
     }
   };
 
@@ -309,7 +275,12 @@ const ScannerView: React.FC<ScannerViewProps> = ({ onBack, onShowMap }) => {
               ref={videoRef} 
               autoPlay 
               playsInline 
-              className="absolute inset-0 w-full h-full object-cover opacity-60 grayscale-[0.5] contrast-125"
+              className={`absolute inset-0 w-full h-full object-cover opacity-60 grayscale-[0.5] contrast-125 ${isBarcodeScanning ? 'hidden' : ''}`}
+            />
+            {/* html5-qrcode barcode scanner (renders here when active) */}
+            <div 
+              id="barcode-scanner-region" 
+              className={`absolute inset-0 w-full h-full overflow-hidden ${isBarcodeScanning ? '' : 'hidden'}`}
             />
             {/* HUD Overlay */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
