@@ -7,11 +7,19 @@
 - Chaston Chaston
 
 ## Purpose
-Allow users to scan barcodes, analyze recyclable information (material classification, recycling instructions, etc.), and use location to find county recycling rules (for example: no plastic bags, no styrofoam) along with other recycling resources (for example: AutoZone will recycle car batteries and motor oil). Based on this, provide the user with recycling options.
+WizardsOfWaverlyHacks is an arcane-themed recycling assistant that empowers users to make sustainable choices. Users can scan barcodes to analyze recyclable materials, receive location-based county recycling rules (such as no plastic bags or styrofoam restrictions), and discover nearby recycling resources (like AutoZone for car batteries and motor oil). The application features a fully designed front-end with interactive React components including authentication views, an about page, a floating AI chat assistant (Igris), and a barcode scanner interface—all seamlessly integrated with backend APIs to deliver personalized recycling guidance.
 
 ## Tools
 - GitHub Copilot
 - ChatGPT
+- React & TypeScript
+- Framer Motion
+- Tailwind CSS
+- Node.js & Express
+
+## Team Contributions
+- **Diego Parra**: Designed and developed the working front-end, creating essential React components (HomeView, AboutView, AuthView, RecycleView, FloatingChat) that integrate with backend services. Served as record holder and documentation lead.
+- **Team**: Backend API development, recycling data services, and system integration.
 
 ## Problems and Solutions
 - Trying to find a way to scan barcodes
