@@ -53,6 +53,10 @@ const express = require('express');
 // Import route handlers
 const recyclingRoutes = require('./routes/recyclingRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const authRoutes = require('./routes/authRoutes');
+
+// Database
+const { testConnection } = require('./config/database');
 
 // ============================================
 // Create Express app
@@ -127,6 +131,7 @@ if (process.env.DEBUG === 'true') {
  */
 app.use('/api', recyclingRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/auth', authRoutes);
 
 /**
  * Root Route
@@ -207,13 +212,14 @@ app.use((err, req, res, next) => {
 // ============================================
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log('');
   console.log('♻️  RecycleLocal Backend');
   console.log('─'.repeat(40));
   console.log(`   Server:    http://localhost:${PORT}`);
   console.log(`   API Docs:  http://localhost:${PORT}/`);
   console.log(`   Health:    http://localhost:${PORT}/api/recycling/health`);
+  await testConnection();
   console.log('');
   console.log('   Try it:');
   console.log(`   curl -X POST http://localhost:${PORT}/api/recycling \\`);
